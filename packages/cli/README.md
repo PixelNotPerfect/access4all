@@ -4,11 +4,15 @@ Vérification d'accessibilité **avant la recette**, fondée sur le RGAA 4.1.2 e
 
 ## Installation
 
+Le paquet n'est pas publié sur npm : on l'installe depuis la racine du dépôt.
+
 ```bash
 npm install
-npx playwright install chromium   # une seule fois, télécharge le navigateur
+npx -w @access4all/cli playwright install chromium   # une seule fois, télécharge le navigateur
 npm run build
 ```
+
+`npx access4all …` fonctionne alors depuis le dépôt. Pour avoir la commande partout (dans le projet que vous testez par exemple) : `npm link -w @access4all/cli`, puis `access4all check …`. Comme le lien pointe vers le dépôt, un `npm run build` suffit ensuite pour profiter des mises à jour.
 
 ## Pour les développeurs : `check`
 
