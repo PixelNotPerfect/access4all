@@ -28,6 +28,12 @@ npx access4all check https://exemple.fr
 npm run dev -w @access4all/web   # app web sur http://localhost:5173
 ```
 
+`access4all` n'est pas publié sur npm : `npx access4all` ne fonctionne que depuis ce dépôt, après `npm install` et `npm run build`. Pour l'utiliser depuis n'importe quel dossier (par exemple dans le projet que vous testez), installez la commande une fois pour toutes :
+
+```bash
+npm link -w @access4all/cli   # puis : access4all check http://localhost:3000
+```
+
 ## Pourquoi RGAA 4.1.2 + WCAG 2.2 ?
 
 Le RGAA 4.1.2 est le référentiel opposable en France ; il repose sur les WCAG 2.1. Les WCAG 2.2 ajoutent six critères de niveau A/AA (focus non masqué, glisser-déposer, taille des cibles, aide cohérente, saisie redondante, authentification accessible). Ils sont proposés en option (`wcag22: true`) pour anticiper la prochaine version du RGAA et de la norme EN 301 549, sans fausser le taux de conformité RGAA officiel.

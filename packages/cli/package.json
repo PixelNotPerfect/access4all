@@ -5,10 +5,11 @@
   "license": "MIT",
   "type": "module",
   "bin": {
-    "access4all": "dist/index.js"
+    "access4all": "bin/access4all.js"
   },
   "main": "dist/index.js",
   "files": [
+    "bin",
     "dist"
   ],
   "scripts": {
