@@ -1,0 +1,5 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "noEmit": true, "lib": ["ES2022", "DOM", "DOM.Iterable"], "module": "ESNext", "moduleResolution": "Bundler", "types": ["node", "vite/client"] },
+  "include": ["src", "test", "vite.config.ts", "vitest.config.ts"]
+}
