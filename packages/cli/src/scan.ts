@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import { readFileSync, existsSync } from "node:fs";
 import { mappedAxeRules } from "@access4all/core";
-import type { AxeResults } from "./analyze.js";
+import type { AxeResults, AxeRuleResult } from "./analyze.js";
 
 const require = createRequire(import.meta.url);
 
@@ -13,6 +13,75 @@ export interface ScanOptions {
   /** Attente supplémentaire après chargement, en ms (contenus chargés en JS). */
   waitMs?: number;
   timeoutMs?: number;
+  /** Capturer chaque élément en erreur (pour le rapport HTML). */
+  screenshots?: boolean;
+  /** Nombre maximal de captures par page. Défaut : 60. */
+  maxScreenshots?: number;
+}
+
+/** Marge autour de l'élément capturé, en px. */
+const PAD = 48;
+const MIN_W = 640;
+const MIN_H = 240;
+const MAX_W = 1000;
+const MAX_H = 520;
+
+/** Capture chaque élément en violation, encadré, avec un peu de contexte autour. */
+async function captureNodes(page: import("playwright").Page, rules: AxeRuleResult[], max: number): Promise<void> {
+  let count = 0;
+  const vp = page.viewportSize() ?? { width: 1280, height: 800 };
+  for (const rule of rules) {
+    for (const node of rule.nodes) {
+      // Sélecteurs dans un iframe ou un shadow DOM : non gérés ici.
+      if (node.target.length !== 1 || typeof node.target[0] !== "string") continue;
+      const selector = node.target[0];
+      if (/^html$/i.test(selector)) {
+        node.visibility = "page";
+        continue;
+      }
+      if (count >= max) continue;
+      const box = await page
+        .evaluate((sel) => {
+          const el = document.querySelector(sel);
+          if (!el) return null;
+          el.scrollIntoView({ block: "center", inline: "center" });
+          const r = el.getBoundingClientRect();
+          const st = getComputedStyle(el);
+          const hidden = r.width < 1 || r.height < 1 || st.visibility === "hidden" || st.display === "none";
+          return { x: r.left, y: r.top, width: r.width, height: r.height, hidden };
+        }, selector)
+        .catch(() => null);
+      if (!box) continue;
+      if (box.hidden) {
+        node.visibility = "hidden";
+        continue;
+      }
+      const marker = await page.evaluateHandle((b) => {
+        const m = document.createElement("div");
+        m.setAttribute("data-access4all-marker", "");
+        m.style.cssText = `position:fixed;left:${b.x - 4}px;top:${b.y - 4}px;width:${b.width + 8}px;height:${b.height + 8}px;` +
+          "outline:3px solid #d0006f;box-shadow:0 0 0 6px rgba(255,255,255,.85);pointer-events:none;z-index:2147483647;border-radius:3px;";
+        document.body.appendChild(m);
+        return m;
+      }, box);
+      try {
+        // Zone de contexte centrée sur l'élément, assez large pour se repérer dans la page.
+        const width = Math.min(vp.width, MAX_W, Math.max(MIN_W, box.width + 2 * PAD));
+        const height = Math.min(vp.height, MAX_H, Math.max(MIN_H, box.height + 2 * PAD));
+        const x = Math.min(Math.max(0, box.x + box.width / 2 - width / 2), vp.width - width);
+        const y = Math.min(Math.max(0, box.y + box.height / 2 - height / 2), vp.height - height);
+        if (width < 1 || height < 1) continue;
+        const buf = await page.screenshot({ clip: { x, y, width, height }, type: "jpeg", quality: 75, animations: "disabled" });
+        node.screenshot = `data:image/jpeg;base64,${buf.toString("base64")}`;
+        node.visibility = "visible";
+        count++;
+      } catch {
+        // Capture impossible (élément hors écran, page instable) : le rapport s'en passe.
+      } finally {
+        await marker.evaluate((m) => (m as Element).remove()).catch(() => {});
+      }
+    }
+  }
 }
 
 function axeSource(): string {
@@ -58,13 +127,18 @@ export async function scanUrls(urls: string[], options: ScanOptions = {}): Promi
                 impact: x.impact,
                 help: x.help,
                 helpUrl: x.helpUrl,
-                nodes: x.nodes.map((n: any) => ({ target: n.target, html: n.html, failureSummary: n.failureSummary })),
+                nodes: x.nodes.map((n: any) => {
+                  // Données techniques utiles à la correction (ex. couleurs et ratio de contraste).
+                  const check = [...(n.any ?? []), ...(n.all ?? []), ...(n.none ?? [])].find((c: any) => c.data && typeof c.data === "object");
+                  return { target: n.target, html: n.html, failureSummary: n.failureSummary, ...(check ? { data: check.data } : {}) };
+                }),
               }));
             return { violations: slim(r.violations), incomplete: slim(r.incomplete), passes: slim(r.passes).map((p: any) => ({ ...p, nodes: [] })) };
           },
           { rules, locale },
         );
-        out.push({ url: page.url(), ...res });
+        if (options.screenshots) await captureNodes(page, res.violations, options.maxScreenshots ?? 60);
+        out.push({ url: page.url(), title: await page.title(), ...res });
       } finally {
         await page.close();
       }
