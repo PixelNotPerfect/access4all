@@ -6,21 +6,24 @@ Elle s'adresse à quatre profils :
 
 | Profil | Besoin | Outil |
 |---|---|---|
-| Développeur | Savoir pas à pas quoi corriger dans son code avant la recette | CLI `access4all check` *(à venir)* |
-| Designer | Repérer ce qui n'est pas accessible dans ses maquettes avant de les livrer | Checklist de revue de maquettes *(à venir)* |
-| BA / recette | Dérouler une recette accessibilité guidée | Grille de recette *(à venir)* |
+| Développeur | Savoir pas à pas quoi corriger dans son code avant la recette | [`access4all check`](packages/cli) |
+| Designer | Repérer ce qui n'est pas accessible dans ses maquettes avant de les livrer | [`access4all checklist --role design`](packages/cli) (app web interactive à venir) |
+| BA / recette | Dérouler une recette accessibilité guidée | [`access4all checklist --role ba`](packages/cli) (app web interactive à venir) |
 | Tout métier | Auditer un site, obtenir un rapport et un calendrier d'actions | Module d'audit *(à venir)* |
 
 ## Paquets
 
 - [`@access4all/core`](packages/core) : le socle commun. Référentiel RGAA 4.1.2 + compléments WCAG 2.2, conseils par métier, correspondance axe-core, calcul du taux de conformité et calendrier d'actions (export .ics et CSV).
+- [`@access4all/cli`](packages/cli) : la commande `access4all` : scan axe-core et rapport pas à pas pour les devs, et checklists par métier.
 
 ## Démarrer
 
 ```bash
 npm install
-npm test
+npx -w @access4all/cli playwright install chromium
 npm run build
+npm test
+npx access4all check https://exemple.fr
 ```
 
 ## Pourquoi RGAA 4.1.2 + WCAG 2.2 ?
