@@ -1,0 +1,29 @@
+{
+  "name": "@access4all/cli",
+  "version": "0.1.0",
+  "description": "Vérification d'accessibilité RGAA 4.1.2 / WCAG 2.2 avant recette : scan axe-core, rapport pas à pas et checklists par métier.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "access4all": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@access4all/core": "0.1.0",
+    "axe-core": "^4.10.3",
+    "playwright": "^1.63.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.9"
+  }
+}
