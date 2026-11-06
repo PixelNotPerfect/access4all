@@ -49,6 +49,8 @@ describe("l'app est elle-même accessible", () => {
     const page = await browser.newPage({ viewport: { width: 320, height: 640 } });
     for (const h of ["#/", "#/maquettes", "#/grille", "#/rapport"]) {
       await page.goto(base + h);
+      // Police large pour ne pas dépendre des polices installées sur la machine.
+      await page.addStyleTag({ content: ":root { font-family: 'DejaVu Sans', Verdana, sans-serif !important; }" });
       expect(await page.evaluate(() => document.documentElement.scrollWidth), h).toBeLessThanOrEqual(320);
     }
     await page.close();
