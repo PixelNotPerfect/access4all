@@ -2,7 +2,7 @@
   "name": "access4all",
   "private": true,
   "type": "module",
-  "workspaces": ["packages/core", "packages/cli"],
+  "workspaces": ["packages/core", "packages/cli", "packages/web"],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "test": "npm test --workspaces --if-present",

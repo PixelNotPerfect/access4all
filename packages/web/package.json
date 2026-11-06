@@ -1,0 +1,26 @@
+{
+  "name": "@access4all/web",
+  "version": "0.1.0",
+  "private": true,
+  "description": "App web access4all : revue de maquettes, grille de recette, audit RGAA avec rapport et calendrier d'actions.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@access4all/core": "0.1.0"
+  },
+  "devDependencies": {
+    "@access4all/cli": "0.1.0",
+    "@types/node": "^22.0.0",
+    "playwright": "^1.63.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.21",
+    "vitest": "^2.1.9"
+  }
+}
