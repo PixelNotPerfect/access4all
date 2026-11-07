@@ -62,6 +62,12 @@ Le script produit une page HTML autonome (images incluses, un seul fichier à pa
 
 Le rapport est lui-même accessible (structure de titres, sommaire, tableau de synthèse, gravité indiquée en texte et pas seulement en couleur, mode sombre, lisible sur mobile et à l'impression). `-o chemin.html` choisit un autre emplacement, `--no-open` évite l'ouverture du navigateur (jamais ouvert en CI), `--no-screenshots` donne un rapport plus léger, sans captures.
 
+### Erreurs techniques vues dans les DevTools
+
+Pendant le scan, le script écoute aussi ce que vous verriez dans les outils de développement de Chrome : **console** (erreurs et avertissements), **erreurs JavaScript non interceptées**, **requêtes réseau en échec** (404, 5xx, CORS, contenu mixte, serveur injoignable…) et **onglet Problèmes** (formulaires mal étiquetés, id en double, cookies, fonctionnalités obsolètes…). axe-core ne les contrôle pas, mais un script en erreur ou une ressource manquante casse souvent un composant, d'abord pour les personnes au clavier ou avec un lecteur d'écran.
+
+Le rapport les regroupe dans une section « Erreurs techniques vues dans les DevTools » : une même erreur présente sur plusieurs écrans n'est décrite qu'une fois. Pour chacune : le message exact, le fichier et la ligne (ou la ressource), la cause probable, un **pas à pas** (où la retrouver dans les DevTools, où chercher dans le code, comment corriger, comment vérifier) et, quand c'est le cas, **pourquoi elle gêne l'accessibilité** avec les critères RGAA concernés. Les erreurs venant d'un service tiers (statistiques, chat, CDN) sont signalées comme telles. Les messages produits par l'outil lui-même (axe-core) sont ignorés.
+
 ### Un produit de plusieurs écrans (un client, 100 écrans…)
 
 Chaque produit a son fichier `produit.json`, rangé **hors du code** avec ses rapports, dans `~/access4all-rapports/<identifiant>/`. On le crée une fois :

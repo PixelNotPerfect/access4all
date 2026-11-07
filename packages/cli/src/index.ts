@@ -18,6 +18,7 @@ export { renderCheck, renderChecklist } from "./render.js";
 export { renderHtmlReport } from "./render-html.js";
 export { ruleFixes, closestCompliantColor, contrastRatio } from "./fixes.js";
 export { scanUrls } from "./scan.js";
+export { groupDevtools, guideFor } from "./devtools-guide.js";
 export { REPORTS_DIR, loadProduct, resolvePages, parseSitemap, initProduct } from "./product.js";
 
 const HELP = `access4all — accessibilité RGAA 4.1.2 + WCAG 2.2

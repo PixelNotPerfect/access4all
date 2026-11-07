@@ -7,6 +7,8 @@ import { renderHtmlReport } from "../src/render-html.js";
 import { defaultReportPath, REPORTS_DIR } from "../src/index.js";
 import { consolidate } from "../src/consolidate.js";
 import { parseSitemap, resolvePages } from "../src/product.js";
+import { groupDevtools, guideFor } from "../src/devtools-guide.js";
+import type { DevtoolsEntry } from "../src/devtools.js";
 import { closestCompliantColor, contrastRatio, ruleFixes, setAttr } from "../src/fixes.js";
 import { settledCriteria } from "../src/analyze.js";
 import { CHECK_HELP, crossPageChecks, type ChecksResult } from "../src/checks.js";
@@ -249,4 +251,47 @@ describe("tests complémentaires dans le navigateur", () => {
     expect(pages[2].checks.violations.map((r) => r.id)).toContain("a4a-navigation-inconstante");
     expect(pages[1].checks.incomplete.map((r) => r.id)).toContain("a4a-titre-page-duplique");
   });
+});
+
+describe("erreurs DevTools", () => {
+  const entry = (e: Partial<DevtoolsEntry>): DevtoolsEntry => ({ source: "console", level: "error", message: "", count: 1, ...e });
+
+  it("associe chaque erreur à un pas à pas adapté", () => {
+    expect(guideFor(entry({ source: "exception", message: "TypeError: Cannot read properties of null (reading 'addEventListener')" })).id).toBe("js-null");
+    expect(guideFor(entry({ source: "network", message: "HTTP 404", status: 404, resourceType: "script", resource: "https://a.fr/app.js" })).id).toBe("404-script");
+    expect(guideFor(entry({ source: "network", message: "HTTP 404", status: 404, resourceType: "image", resource: "https://a.fr/favicon.ico" })).id).toBe("favicon");
+    expect(guideFor(entry({ message: "Access to fetch at 'https://api.b.fr/x' from origin 'https://a.fr' has been blocked by CORS policy" })).id).toBe("cors");
+    expect(guideFor(entry({ level: "warning", message: "Blocked aria-hidden on an element because its descendant retained focus." })).a11y?.level).toBe("fort");
+    expect(guideFor(entry({ message: "Bonjour" })).id).toBe("console-error");
+  });
+
+  it("regroupe une même erreur sur plusieurs écrans et signale les services tiers", () => {
+    const err = entry({ source: "exception", message: "ReferenceError: gtag is not defined", location: "https://cdn.tiers.com/t.js?v=1:1:10" });
+    const groups = groupDevtools([
+      { url: "https://a.fr/", devtools: [err, entry({ level: "warning", message: "[Deprecation] x" })] },
+      { url: "https://a.fr/contact", devtools: [{ ...err, location: "https://cdn.tiers.com/t.js?v=2:1:10", count: 2 }] },
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].guide.id).toBe("js-not-defined");
+    expect(groups[0].pages).toEqual([0, 1]);
+    expect(groups[0].count).toBe(3);
+    expect(groups[0].thirdParty).toBe("cdn.tiers.com");
+  });
+
+  it("collecte console, erreurs JS, réseau et onglet Problèmes pendant le scan, et les explique dans le rapport", async () => {
+    const [res] = await scanUrls([fixture("devtools.html")]);
+    const dt = res.devtools ?? [];
+    expect(dt.some((e) => e.source === "exception" && /null/.test(e.message))).toBe(true);
+    expect(dt.some((e) => e.source === "console" && /Erreur volontaire/.test(e.message))).toBe(true);
+    expect(dt.filter((e) => e.source === "network").map((e) => e.resourceType).sort()).toEqual(["image", "stylesheet"]);
+    expect(dt.some((e) => e.source === "issue" && e.html?.includes("<input"))).toBe(true);
+
+    const html = renderHtmlReport({ analyses: [analyze(res)], manual: [] });
+    expect(html).toContain('id="devtools"');
+    expect(html).toContain("Pas à pas pour corriger");
+    expect(html).toContain("Script en erreur : élément ou donnée absent");
+    expect(html).toContain("Feuille de styles introuvable");
+    expect(html).toContain("Impact accessibilité");
+    expect(renderCheck({ analyses: [analyze(res)], manual: [] }, "text")).toContain("Erreurs techniques vues dans les DevTools");
+  }, 30_000);
 });

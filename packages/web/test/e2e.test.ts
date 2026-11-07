@@ -19,8 +19,10 @@ beforeAll(async () => {
     const path = normalize(decodeURIComponent((req.url ?? "/").split("?")[0])).replace(/^(\.\.[/\\])+/, "");
     const file = join(dist, path.endsWith("/") ? `${path}index.html` : path);
     try {
+      // Lire avant d'écrire l'en-tête : un fichier absent (ex. /favicon.ico, demandé par Chromium) doit donner un 404.
+      const body = await readFile(file);
       res.writeHead(200, { "content-type": TYPES[extname(file)] ?? "application/octet-stream" });
-      res.end(await readFile(file));
+      res.end(body);
     } catch {
       res.writeHead(404).end();
     }
