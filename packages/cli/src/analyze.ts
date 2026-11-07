@@ -1,5 +1,6 @@
 import { criteriaForAxeRule, getCriteria, getCriterion, type Criterion, type Impact, type Persona } from "@access4all/core";
 import type { Verdict } from "./checks.js";
+import type { DevtoolsEntry } from "./devtools.js";
 
 /** Sous-ensemble du format de résultat d'axe-core utilisé ici. */
 export interface AxeNode {
@@ -28,6 +29,8 @@ export interface AxeResults {
   violations: AxeRuleResult[];
   incomplete: AxeRuleResult[];
   passes: AxeRuleResult[];
+  /** Erreurs et avertissements visibles dans les DevTools pendant le scan. */
+  devtools?: DevtoolsEntry[];
   /** Critères tranchés par les tests complémentaires : conforme (C) ou non applicable (NA). */
   verdicts?: Verdict[];
 }
@@ -73,6 +76,8 @@ export interface PageAnalysis {
   passedCriteria: string[];
   /** Critères tranchés automatiquement (conforme ou non applicable) : plus de vérification manuelle. */
   verdicts: AutoVerdict[];
+  /** Erreurs et avertissements visibles dans les DevTools (console, réseau, onglet Problèmes). */
+  devtools?: DevtoolsEntry[];
 }
 
 const IMPACT_ORDER: Record<Impact, number> = { bloquant: 0, majeur: 1, mineur: 2 };
@@ -151,6 +156,7 @@ export function analyze(results: AxeResults, options: { wcag22?: boolean } = {})
         const c = getCriterion(x.criterion);
         return c ? [{ ...x, criterionData: c }] : [];
       }),
+    ...(results.devtools ? { devtools: results.devtools } : {}),
   };
 }
 

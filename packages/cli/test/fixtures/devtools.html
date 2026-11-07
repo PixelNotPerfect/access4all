@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>Page avec erreurs DevTools</title>
+<link rel="stylesheet" href="styles-manquants.css">
+</head>
+<body>
+<main>
+<h1>Page avec erreurs techniques</h1>
+<img src="logo-absent.png" alt="Logo de l'exemple">
+<form>
+<label>Étiquette orpheline</label>
+<label for="email">Courriel</label><input id="email" name="email">
+<label for="tel">Téléphone</label><input id="tel" name="tel">
+<label for="tel2">Téléphone 2</label><input id="tel" name="tel2">
+</form>
+</main>
+<script>
+console.error("Erreur volontaire écrite par le code");
+const menu = document.querySelector(".menu-inexistant");
+menu.addEventListener("click", () => {});
+</script>
+</body>
+</html>

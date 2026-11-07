@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from "node:fs";
 import { mappedAxeRules } from "@access4all/core";
 import type { AxeResults, AxeRuleResult } from "./analyze.js";
 import { crossPageChecks, runChecks, type ChecksResult } from "./checks.js";
+import { collectDevtools } from "./devtools.js";
 
 const require = createRequire(import.meta.url);
 
@@ -109,7 +110,11 @@ function axeLocaleFr(): unknown {
 export async function scanUrls(urls: string[], options: ScanOptions = {}): Promise<AxeResults[]> {
   const { chromium } = await import("playwright");
   const executablePath = options.executablePath ?? process.env.ACCESS4ALL_CHROMIUM ?? undefined;
-  const browser = await chromium.launch({ executablePath });
+  // Chromium complet plutôt que la version « headless shell » : seul le premier remplit
+  // l'onglet Problèmes (Issues) des DevTools (formulaires mal étiquetés, id en double…).
+  const browser = executablePath
+    ? await chromium.launch({ executablePath })
+    : await chromium.launch({ channel: "chromium" }).catch(() => chromium.launch());
   const source = axeSource();
   const locale = axeLocaleFr();
   const rules = mappedAxeRules();
@@ -126,16 +131,20 @@ export async function scanUrls(urls: string[], options: ScanOptions = {}): Promi
     for (const [i, url] of urls.entries()) {
       options.onPage?.(i, url);
       const page = await context.newPage();
+      // Erreurs visibles dans les DevTools (console, réseau, onglet Problèmes), dès le chargement.
+      const devtools = await collectDevtools(page, context);
       try {
         try {
           await page.goto(url, { waitUntil: "load", timeout: options.timeoutMs ?? 30_000 });
         } catch (e) {
           // Sur un produit de plusieurs écrans, une page en erreur ne doit pas arrêter tout le scan.
           if (urls.length === 1) throw e;
-          out.push({ url, violations: [], incomplete: [], passes: [], error: (e as Error).message.split("\n")[0] });
+          out.push({ url, violations: [], incomplete: [], passes: [], error: (e as Error).message.split("\n")[0], devtools: await devtools.finish() });
           continue;
         }
         if (options.waitMs) await page.waitForTimeout(options.waitMs);
+        // axe-core relit les feuilles de styles : ses propres messages ne sont pas des erreurs du site.
+        devtools.pause();
         await page.addScriptTag({ content: source });
         const res = await page.evaluate(
           async ({ rules, locale }) => {
@@ -161,6 +170,7 @@ export async function scanUrls(urls: string[], options: ScanOptions = {}): Promi
           },
           { rules, locale },
         );
+        devtools.resume();
         if (options.screenshots) await captureNodes(page, res.violations, options.maxScreenshots ?? 60, seen);
         const title = await page.title();
         const finalUrl = page.url();
@@ -176,7 +186,7 @@ export async function scanUrls(urls: string[], options: ScanOptions = {}): Promi
           }
         }
         checks[out.length] = extra;
-        out.push({ url: finalUrl, title, ...res });
+        out.push({ url: finalUrl, title, ...res, devtools: await devtools.finish() });
       } finally {
         await page.close();
       }

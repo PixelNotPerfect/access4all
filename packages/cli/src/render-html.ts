@@ -1,4 +1,5 @@
-import { RGAA_VERSION, WCAG_VERSION, adviceFor, type Criterion, type Impact } from "@access4all/core";
+import { RGAA_VERSION, WCAG_VERSION, adviceFor, getCriterion, type Criterion, type Impact } from "@access4all/core";
+import { SOURCE_LABEL, groupDevtools, stepsFor, type DevtoolsGroup } from "./devtools-guide.js";
 import type { CriterionFinding, Occurrence, PageAnalysis } from "./analyze.js";
 import { contrastDetails, fixFor, topicWhy } from "./fixes.js";
 import type { CheckReport } from "./render.js";
@@ -196,9 +197,11 @@ function pageSection(a: PageAnalysis, idx: number, ctx: Ctx, sharedCount: number
 
 function summaryTable(analyses: PageAnalysis[], sharedCounts: number[]): string {
   const multi = analyses.length > 1;
+  const dt = analyses.some((a) => a.devtools?.length);
+  const dtCell = (a: PageAnalysis) => (dt ? `<td>${a.devtools?.length ? `<a href="#devtools">${a.devtools.length}</a>` : 0}</td>` : "");
   const rows = analyses.map((a, i) => {
     if (a.error) {
-      return `<tr><th scope="row"><a href="#${slug("page", i)}">${esc(pageLabel(a))}</a></th><td colspan="${multi ? 5 : 4}">Non scanné (erreur de chargement)</td></tr>`;
+      return `<tr><th scope="row"><a href="#${slug("page", i)}">${esc(pageLabel(a))}</a></th><td colspan="${multi ? 5 : 4}">Non scanné (erreur de chargement)</td>${dtCell(a)}</tr>`;
     }
     const counts = { bloquant: 0, majeur: 0, mineur: 0 };
     let elements = 0;
@@ -206,14 +209,14 @@ function summaryTable(analyses: PageAnalysis[], sharedCounts: number[]): string 
       counts[f.criterion.impact]++;
       elements += f.violations.length;
     }
-    return `<tr><th scope="row"><a href="#${slug("page", i)}">${esc(pageLabel(a))}</a></th><td>${counts.bloquant}</td><td>${counts.majeur}</td><td>${counts.mineur}</td><td>${elements}</td>${multi ? `<td>${sharedCounts[i]}</td>` : ""}</tr>`;
+    return `<tr><th scope="row"><a href="#${slug("page", i)}">${esc(pageLabel(a))}</a></th><td>${counts.bloquant}</td><td>${counts.majeur}</td><td>${counts.mineur}</td><td>${elements}</td>${multi ? `<td>${sharedCounts[i]}</td>` : ""}${dtCell(a)}</tr>`;
   });
   return `<div class="table-wrap"><table class="summary"><caption>Critères en échec par écran et par gravité${multi ? " (hors problèmes communs)" : ""}</caption>
-<thead><tr><th scope="col">Écran</th><th scope="col">Bloquants</th><th scope="col">Majeurs</th><th scope="col">Mineurs</th><th scope="col">Éléments à corriger</th>${multi ? `<th scope="col">Éléments communs</th>` : ""}</tr></thead>
+<thead><tr><th scope="col">Écran</th><th scope="col">Bloquants</th><th scope="col">Majeurs</th><th scope="col">Mineurs</th><th scope="col">Éléments à corriger</th>${multi ? `<th scope="col">Éléments communs</th>` : ""}${dt ? `<th scope="col">Erreurs DevTools</th>` : ""}</tr></thead>
 <tbody>${rows.join("")}</tbody></table></div>`;
 }
 
-function toc(analyses: PageAnalysis[], shared: CriterionFinding[], settledCount = 0): string {
+function toc(analyses: PageAnalysis[], shared: CriterionFinding[], settledCount = 0, devtools = 0): string {
   const detail = analyses.length <= TOC_DETAIL_MAX;
   const sharedItem = shared.length
     ? `<li><a href="#communs">Problèmes communs à plusieurs écrans</a><ol>${shared
@@ -233,7 +236,57 @@ function toc(analyses: PageAnalysis[], shared: CriterionFinding[], settledCount 
             : ""
         }</li>`,
     )
-    .join("")}${settledCount ? `<li><a href="#auto">Vérifié automatiquement (${settledCount} critères)</a></li>` : ""}<li><a href="#manuel">Vérifications manuelles</a></li></ol></nav>`;
+    .join("")}${settledCount ? `<li><a href="#auto">Vérifié automatiquement (${settledCount} critères)</a></li>` : ""}${devtools ? `<li><a href="#devtools">Erreurs techniques vues dans les DevTools (${devtools})</a></li>` : ""}<li><a href="#manuel">Vérifications manuelles</a></li></ol></nav>`;
+}
+
+function devtoolsGroupBlock(g: DevtoolsGroup, n: number, ctx: Ctx): string {
+  const e = g.entry;
+  const id = slug("devtools", n);
+  const isError = e.level === "error";
+  const a11y = g.guide.a11y;
+  const crit = (a11y?.criteria ?? [])
+    .map((cid) => getCriterion(cid))
+    .filter((c): c is Criterion => !!c)
+    .map((c) => `<a href="${esc(c.url)}">${esc(c.id)} ${esc(c.title)}</a>`);
+  const details = [
+    e.resource ? `<dt>Ressource</dt><dd><code>${esc(e.resource)}</code>${e.resourceType ? ` (${esc(e.resourceType)})` : ""}</dd>` : "",
+    e.location ? `<dt>Fichier</dt><dd><code>${esc(e.location)}</code></dd>` : "",
+    e.stack ? `<dt>Pile d'appels</dt><dd><pre class="code"><code>${esc(e.stack)}</code></pre></dd>` : "",
+    g.elements.length
+      ? `<dt>${g.elements.length > 1 ? `${g.elements.length} éléments en cause` : "Élément en cause"}</dt><dd>${g.elements
+          .slice(0, 15)
+          .map((h) => `<pre class="code"><code>${esc(h)}</code></pre>`)
+          .join("")}${g.elements.length > 15 ? `<p>… et ${g.elements.length - 15} autre(s).</p>` : ""}</dd>`
+      : "",
+  ].join("");
+  const where = g.pages.length > 1
+    ? `<details class="where"><summary>Présent sur ${g.pages.length} écrans</summary><ul>${g.pages
+        .map((i) => `<li><a href="#${slug("page", i)}">${esc(pageLabel(ctx.pages[i]))}</a></li>`)
+        .join("")}</ul></details>`
+    : `<p>Écran : <a href="#${slug("page", g.pages[0])}">${esc(pageLabel(ctx.pages[g.pages[0]]))}</a></p>`;
+  return `<section class="finding devtools ${isError ? "finding-bloquant" : "finding-mineur"}" aria-labelledby="${id}">
+<h3 id="${id}"><span class="step">${n}.</span> <span class="badge ${isError ? "badge-bloquant" : "badge-mineur"}">${isError ? "Erreur" : "Avertissement"}</span>${a11y ? ` <span class="badge badge-a11y">${a11y.level === "fort" ? "Impact accessibilité" : "Impact accessibilité possible"}</span>` : ""} ${esc(g.guide.title)}</h3>
+<p class="meta">Onglet DevTools : ${esc(SOURCE_LABEL[e.source])}. ${g.elements.length ? `${g.elements.length} élément(s)` : `Vu ${g.count} fois`}${g.pages.length > 1 ? ` sur ${g.pages.length} écrans` : ""}.${g.thirdParty ? ` Vient d'un autre domaine : <strong>${esc(g.thirdParty)}</strong>.` : ""}</p>
+${where}
+<pre class="code"><code>${esc(e.message)}</code></pre>
+${details ? `<dl class="dt-dl">${details}</dl>` : ""}
+<h4>Cause probable</h4>
+<p>${esc(g.guide.cause)}</p>
+<h4>Pas à pas pour corriger</h4>
+<ol class="dt-steps">${stepsFor(g).map((s) => `<li>${esc(s)}</li>`).join("")}</ol>
+${a11y ? `<h4>Pourquoi c'est un problème d'accessibilité</h4><p>${esc(a11y.why)}</p>${crit.length ? `<p class="meta">Critères concernés : ${crit.join(", ")}.</p>` : ""}` : ""}
+</section>`;
+}
+
+function devtoolsSection(groups: DevtoolsGroup[], ctx: Ctx): string {
+  if (!groups.length) return "";
+  const errors = groups.filter((g) => g.entry.level === "error").length;
+  const a11y = groups.filter((g) => g.guide.a11y).length;
+  return `<section aria-labelledby="devtools" class="devtools-all"><h2 id="devtools">Erreurs techniques vues dans les DevTools</h2>
+<p>Ces messages apparaissent dans les outils de développement du navigateur (console, onglet Réseau, onglet Problèmes) pendant le chargement des écrans. axe-core ne les contrôle pas, mais ils cassent souvent un composant pour tout le monde : un script en erreur s'arrête, une ressource manquante n'est pas affichée. Les personnes qui naviguent au clavier ou avec un lecteur d'écran sont les premières bloquées.</p>
+<p>${groups.length} problème(s) différent(s), dont ${errors} erreur(s) et ${a11y} avec un impact sur l'accessibilité. Ils sont classés du plus urgent au moins urgent ; une erreur présente sur plusieurs écrans n'est décrite qu'une fois.</p>
+${groups.map((g, i) => devtoolsGroupBlock(g, i + 1, ctx)).join("\n")}
+</section>`;
 }
 
 const SETTLED_TEXT = { C: "Conforme", NA: "Non applicable", "C/NA": "Conforme ou non applicable" } as const;
@@ -347,6 +400,10 @@ img.mini{display:block;max-width:min(100%,480px);height:auto;border:1px solid va
 .st{font-weight:700;white-space:nowrap}.st-c{color:var(--fix-line)}.st-na{color:var(--muted)}
 .error{border-left:4px solid var(--bloquant);padding-left:.6rem}
 .where{margin:0 0 .4rem}
+.badge-a11y{color:var(--mark)}
+.devtools h4{margin:1rem 0 .3rem}
+.dt-steps li{margin:.3rem 0}
+.dt-dl dt{font-weight:700;margin-top:.4rem}.dt-dl dd{margin:.1rem 0 0}
 footer{border-top:1px solid var(--line);margin-top:3rem;padding:1rem 0 2rem;color:var(--muted);font-size:.9rem}
 @media print{details{display:block}details>*{display:block}.skip,.toc{display:none}.finding,.occ{break-inside:avoid}}
 `;
@@ -363,6 +420,7 @@ export function renderHtmlReport(report: CheckReport, options: { generatedAt?: D
   const own = pages.reduce((s, a) => s + a.failures.reduce((t, f) => t + f.violations.length, 0), 0);
   const common = shared.reduce((s, f) => s + f.violations.length, 0);
   const errors = pages.filter((a) => a.error).length;
+  const devtools = groupDevtools(report.analyses);
   const n = report.analyses.length;
   const subject = options.productName ?? (n === 1 ? pageLabel(report.analyses[0]) : `${n} écrans`);
   const title = `Rapport d'accessibilité – ${subject}`;
@@ -370,6 +428,7 @@ export function renderHtmlReport(report: CheckReport, options: { generatedAt?: D
     n > 1 ? `${n - errors} écran(s) scanné(s)${errors ? `, ${errors} en erreur de chargement` : ""}.` : "",
     common ? `${common} élément(s) commun(s) à plusieurs écrans, à corriger une fois.` : "",
     `${own} élément(s) ${common ? "propres à un écran" : "à corriger"} détecté(s) automatiquement.`,
+    devtools.length ? `${devtools.length} erreur(s) ou avertissement(s) technique(s) vu(s) dans les DevTools.` : "",
   ].filter(Boolean).join(" ");
   return `<!DOCTYPE html>
 <html lang="fr">
@@ -391,9 +450,10 @@ export function renderHtmlReport(report: CheckReport, options: { generatedAt?: D
 ${summaryTable(pages, sharedCounts)}
 <p>Pour chaque élément, le rapport montre une capture (l'élément est encadré en rose), son <strong>état actuel</strong> (code HTML), le <strong>problème</strong>, <strong>ce qu'il faut faire</strong> avec une proposition de code, et <strong>pourquoi</strong> c'est important. Le texte entre crochets dans les propositions est à rédiger selon le contexte.</p>
 </section>
-${toc(pages, shared, settled.length)}
+${toc(pages, shared, settled.length, devtools.length)}
 ${sharedSection(shared, ctx)}
 ${pages.map((a, i) => pageSection(a, i, ctx, sharedCounts[i])).join("\n")}
+${devtoolsSection(devtools, ctx)}
 ${settledSection(settled, report.analyses.filter((a) => !a.error).length)}
 ${manualSection(report.manual, settled.length)}
 </main>

@@ -1,5 +1,6 @@
 import { RGAA_VERSION, WCAG_VERSION, adviceFor, type Criterion, type Persona } from "@access4all/core";
 import type { CriterionFinding, Occurrence, PageAnalysis } from "./analyze.js";
+import { groupDevtools, stepsFor } from "./devtools-guide.js";
 
 export type Format = "text" | "markdown" | "json";
 
@@ -85,6 +86,19 @@ export function renderCheck(report: CheckReport, format: Format): string {
           unmapped: a.unmapped,
           passedCriteria: a.passedCriteria,
           verdicts: a.verdicts.map(({ criterion, status, reason }) => ({ criterion, status, reason })),
+          devtools: a.devtools ?? [],
+        })),
+        devtools: groupDevtools(report.analyses).map((g) => ({
+          titre: g.guide.title,
+          niveau: g.entry.level,
+          accessibilite: g.guide.a11y?.level ?? null,
+          message: g.entry.message,
+          ressource: g.entry.resource,
+          fichier: g.entry.location,
+          ecrans: g.pages.map((i) => report.analyses[i].url),
+          occurrences: g.count,
+          cause: g.guide.cause,
+          etapes: stepsFor(g),
         })),
         autoVerified: (report.settled ?? []).map((s) => ({ criterion: s.criterion.id, status: s.status, reason: s.reason })),
         manualChecks: report.manual.map((c) => c.id),
@@ -129,6 +143,24 @@ export function renderCheck(report: CheckReport, format: Format): string {
       ...settled.map((s) => (md ? `- **${s.criterion.id}** ${SETTLED_LABEL[s.status]} — ${s.reason}` : `    ✓ ${s.criterion.id} ${SETTLED_LABEL[s.status]} — ${s.reason}`)),
     );
   }
+  const devtools = groupDevtools(report.analyses);
+  if (devtools.length) {
+    out.push(md ? "\n## Erreurs techniques vues dans les DevTools\n" : "\nErreurs techniques vues dans les DevTools (console, réseau, onglet Problèmes)");
+    devtools.forEach((g, i) => {
+      const tag = `${g.entry.level === "error" ? "erreur" : "avertissement"}${g.guide.a11y ? `, impact accessibilité${g.guide.a11y.level === "possible" ? " possible" : ""}` : ""}`;
+      const where = g.entry.resource ?? g.entry.location;
+      if (md) {
+        out.push(`### ${i + 1}. ${g.guide.title} (${tag})`, "", "```", g.entry.message, "```", "");
+        if (where) out.push(`Source : \`${where}\` — ${g.pages.length} écran(s), ${g.count} fois.`, "");
+        out.push(`Cause probable : ${g.guide.cause}`, "", ...stepsFor(g).map((s, n) => `${n + 1}. ${s}`), "");
+      } else {
+        out.push(`  ${i + 1}. [${tag}] ${g.guide.title}`, `     ${g.entry.message.split("\n")[0]}`);
+        if (where) out.push(`     Source : ${where} (${g.pages.length} écran(s), ${g.count} fois)`);
+        out.push(`     Cause probable : ${g.guide.cause}`, ...stepsFor(g).map((s, n) => `     ${n + 1}) ${s}`), "");
+      }
+    });
+  }
+
   if (report.manual.length) {
     out.push(
       md ? "\n## Vérifications manuelles avant recette\n" : "\nVérifications manuelles avant recette",
