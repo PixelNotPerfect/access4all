@@ -92,7 +92,11 @@ function occurrenceBlock(o: Occurrence, i: number, total: number, c: Criterion, 
 
   const problem = [
     `<p>${esc(fix?.problem ?? o.help)}</p>`,
-    o.summary ? `<details class="axe"><summary>Détail technique (axe-core, règle <code>${esc(o.rule)}</code>)</summary>${axeSummary(o.summary)}</details>` : "",
+    o.summary
+      ? o.rule.startsWith("a4a-")
+        ? `<p class="detail">${esc(o.summary)}</p>`
+        : `<details class="axe"><summary>Détail technique (axe-core, règle <code>${esc(o.rule)}</code>)</summary>${axeSummary(o.summary)}</details>`
+      : "",
   ].join("");
 
   const todo = [
@@ -123,7 +127,12 @@ ${screenshotBlock(o)}
 
 function reviewList(list: Occurrence[]): string {
   return `<ul class="review">${list
-    .map((o) => `<li><code>${esc(o.selector)}</code> — ${esc(fixFor(o.rule)?.problem ?? o.help)}<pre class="code"><code>${esc(o.html)}</code></pre></li>`)
+    .map(
+      (o) =>
+        `<li><code>${esc(o.selector)}</code> — ${esc(fixFor(o.rule)?.problem ?? o.help)}${o.rule.startsWith("a4a-") && o.summary ? `<p class="detail">${esc(o.summary)}</p>` : ""}${
+          o.screenshot ? `<img class="mini" src="${o.screenshot}" alt="Capture de l'élément ${esc(o.selector)}, encadré en rose.">` : ""
+        }<pre class="code"><code>${esc(o.html)}</code></pre></li>`,
+    )
     .join("")}</ul>`;
 }
 
@@ -140,7 +149,7 @@ function findingSection(f: CriterionFinding, n: number, scope: string, ctx: Ctx)
 ${advice.length ? `<p class="advice"><strong>Règle générale :</strong> ${advice.map(esc).join(" ")}</p>` : ""}
 ${detailed.map((o, i) => occurrenceBlock(o, i + 1, f.violations.length, c, `${id}-e${i + 1}`, ctx)).join("\n")}
 ${rest.length ? `<details><summary>Voir les ${rest.length} autres éléments à corriger de la même façon</summary>${reviewList(rest)}</details>` : ""}
-${f.toReview.length ? `<details><summary>${f.toReview.length} élément(s) qu'axe-core n'a pas pu trancher, à vérifier à la main</summary>${reviewList(f.toReview)}</details>` : ""}
+${f.toReview.length ? `<details><summary>${f.toReview.length} élément(s) que le scan n'a pas pu trancher, à vérifier à la main</summary>${reviewList(f.toReview)}</details>` : ""}
 </section>`;
 }
 
@@ -172,7 +181,7 @@ function pageSection(a: PageAnalysis, idx: number, ctx: Ctx, sharedCount: number
     a.failures.forEach((f, i) => parts.push(findingSection(f, i + 1, `p-${idx}`, ctx)));
   }
   if (a.reviews.length) {
-    parts.push(`<section class="finding"><h3 id="${id}-rev">Points à confirmer à la main</h3><p>axe-core n'a pas pu décider seul pour ces éléments (par exemple un texte sur une image de fond). Vérifiez-les visuellement.</p>`);
+    parts.push(`<section class="finding"><h3 id="${id}-rev">Points à confirmer à la main</h3><p>Le scan a repéré ces éléments sans pouvoir trancher seul (par exemple un texte sur une image de fond, une alternative d'image suspecte ou un texte qui ressemble à un titre). Vérifiez-les un par un : c'est plus rapide que de relire tout l'écran.</p>`);
     for (const f of a.reviews) {
       parts.push(`<details><summary>${badge(f.criterion.impact)} ${esc(f.criterion.id)} ${esc(f.criterion.title)} (${f.toReview.length} élément(s))</summary>${reviewList(f.toReview)}<p><a href="${esc(f.criterion.url)}">Voir le critère ${esc(f.criterion.id)}</a></p></details>`);
     }
@@ -204,7 +213,7 @@ function summaryTable(analyses: PageAnalysis[], sharedCounts: number[]): string 
 <tbody>${rows.join("")}</tbody></table></div>`;
 }
 
-function toc(analyses: PageAnalysis[], shared: CriterionFinding[]): string {
+function toc(analyses: PageAnalysis[], shared: CriterionFinding[], settledCount = 0): string {
   const detail = analyses.length <= TOC_DETAIL_MAX;
   const sharedItem = shared.length
     ? `<li><a href="#communs">Problèmes communs à plusieurs écrans</a><ol>${shared
@@ -224,10 +233,39 @@ function toc(analyses: PageAnalysis[], shared: CriterionFinding[]): string {
             : ""
         }</li>`,
     )
-    .join("")}<li><a href="#manuel">Vérifications manuelles</a></li></ol></nav>`;
+    .join("")}${settledCount ? `<li><a href="#auto">Vérifié automatiquement (${settledCount} critères)</a></li>` : ""}<li><a href="#manuel">Vérifications manuelles</a></li></ol></nav>`;
 }
 
-function manualSection(list: Criterion[]): string {
+const SETTLED_TEXT = { C: "Conforme", NA: "Non applicable", "C/NA": "Conforme ou non applicable" } as const;
+
+function settledSection(settled: NonNullable<CheckReport["settled"]>, pages: number): string {
+  if (!settled.length) return "";
+  const conform = settled.filter((s) => s.status !== "NA");
+  const na = settled.filter((s) => s.status === "NA");
+  const link = (c: Criterion) => `<a href="${esc(c.url)}" title="${esc(c.title)}">${esc(c.id)}</a>`;
+  const rows = conform
+    .map(
+      (s) =>
+        `<tr><th scope="row">${link(s.criterion)}</th><td>${esc(s.criterion.title)}</td><td class="st st-c">${SETTLED_TEXT[s.status]}</td><td>${esc(s.reason)}</td></tr>`,
+    )
+    .join("");
+  // Non applicables regroupés par raison : « Aucune vidéo » couvre une dizaine de critères.
+  const byReason = new Map<string, Criterion[]>();
+  for (const s of na) byReason.set(s.reason, [...(byReason.get(s.reason) ?? []), s.criterion]);
+  const naList = [...byReason.entries()]
+    .map(([reason, cs]) => `<li><strong>${esc(reason)}</strong> Critère${cs.length > 1 ? "s" : ""} ${cs.map(link).join(", ")}.</li>`)
+    .join("");
+  return `<section aria-labelledby="auto" class="auto"><h2 id="auto">Vérifié automatiquement</h2>
+<p>Ces ${settled.length} critères ont été tranchés par le scan sur ${pages > 1 ? `les ${pages} écrans` : "l'écran"} (navigation au clavier, zoom à 200 %, affichage à 320 px, espacement du texte, orientation, analyse du code et des styles). Ils sortent des vérifications manuelles. Un audit de conformité les confirmera, notamment sur les contenus qui n'apparaissent qu'après une action (fenêtre, menu ouvert, étape suivante d'un formulaire).</p>
+${conform.length ? `<h3>Conformes (${conform.length})</h3>
+<div class="table-wrap"><table class="summary settled"><caption>Critères vérifiés conformes automatiquement</caption>
+<thead><tr><th scope="col">Critère</th><th scope="col">Intitulé</th><th scope="col">Résultat</th><th scope="col">Comment c'est vérifié</th></tr></thead>
+<tbody>${rows}</tbody></table></div>` : ""}
+${na.length ? `<h3>Non applicables (${na.length})</h3><ul class="na-list">${naList}</ul>` : ""}
+</section>`;
+}
+
+function manualSection(list: Criterion[], settledCount = 0): string {
   if (!list.length) return "";
   const byTopic = new Map<string, Criterion[]>();
   for (const c of list) {
@@ -235,7 +273,7 @@ function manualSection(list: Criterion[]): string {
     byTopic.set(k, [...(byTopic.get(k) ?? []), c]);
   }
   return `<section aria-labelledby="manuel" class="manual"><h2 id="manuel">Vérifications manuelles avant recette</h2>
-<p>Un outil automatique ne détecte qu'une partie des problèmes (environ un tiers). Vérifiez aussi ces ${list.length} critères.</p>
+<p>${settledCount ? `Le scan a déjà tranché ${settledCount} critères (voir <a href="#auto">Vérifié automatiquement</a>). Ceux-ci demandent un regard humain : vérifiez ces ${list.length} critères.` : `Un outil automatique ne détecte qu'une partie des problèmes. Vérifiez aussi ces ${list.length} critères.`}</p>
 ${[...byTopic.entries()]
   .map(
     ([topic, cs]) =>
@@ -302,6 +340,11 @@ summary{cursor:pointer;font-weight:600}
 .axe p{margin:.3rem 0}
 ul.review{padding-left:1.2rem}
 .ok{font-weight:600}
+.detail{margin:.3rem 0}
+img.mini{display:block;max-width:min(100%,480px);height:auto;border:1px solid var(--line);border-radius:6px;margin:.4rem 0;background:#fff}
+.settled td{text-align:left}
+.na-list li{margin:.3rem 0}
+.st{font-weight:700;white-space:nowrap}.st-c{color:var(--fix-line)}.st-na{color:var(--muted)}
 .error{border-left:4px solid var(--bloquant);padding-left:.6rem}
 .where{margin:0 0 .4rem}
 footer{border-top:1px solid var(--line);margin-top:3rem;padding:1rem 0 2rem;color:var(--muted);font-size:.9rem}
@@ -312,6 +355,7 @@ footer{border-top:1px solid var(--line);margin-top:3rem;padding:1rem 0 2rem;colo
 export function renderHtmlReport(report: CheckReport, options: { generatedAt?: Date; productName?: string } = {}): string {
   const date = (options.generatedAt ?? new Date()).toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "short" });
   const { shared, sharedPages, pages } = consolidate(report.analyses);
+  const settled = report.settled ?? [];
   const ctx: Ctx = { pages, sharedPages };
   const sharedCounts = report.analyses.map((a, i) =>
     a.failures.reduce((t, f) => t + f.violations.filter((o) => sharedPages.get(occurrenceKey(o))?.includes(i)).length, 0),
@@ -347,12 +391,13 @@ export function renderHtmlReport(report: CheckReport, options: { generatedAt?: D
 ${summaryTable(pages, sharedCounts)}
 <p>Pour chaque élément, le rapport montre une capture (l'élément est encadré en rose), son <strong>état actuel</strong> (code HTML), le <strong>problème</strong>, <strong>ce qu'il faut faire</strong> avec une proposition de code, et <strong>pourquoi</strong> c'est important. Le texte entre crochets dans les propositions est à rédiger selon le contexte.</p>
 </section>
-${toc(pages, shared)}
+${toc(pages, shared, settled.length)}
 ${sharedSection(shared, ctx)}
 ${pages.map((a, i) => pageSection(a, i, ctx, sharedCounts[i])).join("\n")}
-${manualSection(report.manual)}
+${settledSection(settled, report.analyses.filter((a) => !a.error).length)}
+${manualSection(report.manual, settled.length)}
 </main>
-<footer><div class="wrap"><p>Rapport généré par access4all avec axe-core. Un test automatique ne remplace pas un audit : il détecte une partie des non-conformités. Référentiel : <a href="https://accessibilite.numerique.gouv.fr/methode/criteres-et-tests/">RGAA ${RGAA_VERSION}</a> et <a href="https://www.w3.org/TR/WCAG22/">WCAG ${WCAG_VERSION}</a>.</p></div></footer>
+<footer><div class="wrap"><p>Rapport généré par access4all avec axe-core et des tests complémentaires dans le navigateur (clavier, zoom, reflow, espacement, orientation). Un test automatique ne remplace pas un audit : il détecte une partie des non-conformités. Référentiel : <a href="https://accessibilite.numerique.gouv.fr/methode/criteres-et-tests/">RGAA ${RGAA_VERSION}</a> et <a href="https://www.w3.org/TR/WCAG22/">WCAG ${WCAG_VERSION}</a>.</p></div></footer>
 </body>
 </html>
 `;

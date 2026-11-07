@@ -1,4 +1,5 @@
-import { criteriaForAxeRule, getCriteria, type Criterion, type Impact, type Persona } from "@access4all/core";
+import { criteriaForAxeRule, getCriteria, getCriterion, type Criterion, type Impact, type Persona } from "@access4all/core";
+import type { Verdict } from "./checks.js";
 
 /** Sous-ensemble du format de résultat d'axe-core utilisé ici. */
 export interface AxeNode {
@@ -27,6 +28,13 @@ export interface AxeResults {
   violations: AxeRuleResult[];
   incomplete: AxeRuleResult[];
   passes: AxeRuleResult[];
+  /** Critères tranchés par les tests complémentaires : conforme (C) ou non applicable (NA). */
+  verdicts?: Verdict[];
+}
+
+/** Verdict automatique rattaché à son critère. */
+export interface AutoVerdict extends Verdict {
+  criterionData: Criterion;
 }
 
 export interface Occurrence {
@@ -63,6 +71,8 @@ export interface PageAnalysis {
   unmapped: Occurrence[];
   /** Critères vérifiés automatiquement sans erreur (succès axe, à confirmer). */
   passedCriteria: string[];
+  /** Critères tranchés automatiquement (conforme ou non applicable) : plus de vérification manuelle. */
+  verdicts: AutoVerdict[];
 }
 
 const IMPACT_ORDER: Record<Impact, number> = { bloquant: 0, majeur: 1, mineur: 2 };
@@ -134,7 +144,44 @@ export function analyze(results: AxeResults, options: { wcag22?: boolean } = {})
     reviews: reviews.sort(sortFindings),
     unmapped: v.unmapped,
     passedCriteria: [...p.map.keys()].filter((id) => !v.map.has(id) && !inc.map.has(id)),
+    verdicts: (results.verdicts ?? [])
+      .filter((x) => !v.map.has(x.criterion) && !inc.map.has(x.criterion))
+      .filter((x) => wcag22 || !x.criterion.startsWith("WCAG-"))
+      .flatMap((x) => {
+        const c = getCriterion(x.criterion);
+        return c ? [{ ...x, criterionData: c }] : [];
+      }),
   };
+}
+
+/**
+ * Critères tranchés automatiquement sur l'ensemble des écrans scannés : conforme
+ * ou non applicable partout, sans échec ni élément à vérifier nulle part.
+ * Ce sont eux qui sortent de la liste des vérifications manuelles.
+ */
+export function settledCriteria(analyses: PageAnalysis[]): Array<{ criterion: Criterion; status: "C" | "NA" | "C/NA"; reason: string; pages: number }> {
+  const scanned = analyses.filter((a) => !a.error);
+  if (!scanned.length) return [];
+  const flagged = new Set(scanned.flatMap((a) => [...a.failures, ...a.reviews].map((f) => f.criterion.id)));
+  const out = new Map<string, { criterion: Criterion; statuses: Set<string>; reasons: string[]; pages: number }>();
+  for (const a of scanned) {
+    for (const v of a.verdicts) {
+      const e = out.get(v.criterion) ?? { criterion: v.criterionData, statuses: new Set<string>(), reasons: [], pages: 0 };
+      e.statuses.add(v.status);
+      if (!e.reasons.includes(v.reason)) e.reasons.push(v.reason);
+      e.pages++;
+      out.set(v.criterion, e);
+    }
+  }
+  return [...out.values()]
+    .filter((e) => e.pages === scanned.length && !flagged.has(e.criterion.id))
+    .map((e) => ({
+      criterion: e.criterion,
+      status: (e.statuses.size > 1 ? "C/NA" : [...e.statuses][0]) as "C" | "NA" | "C/NA",
+      reason: e.reasons.length > 1 && scanned.length > 1 ? `${e.reasons[0]} (et ${e.reasons.length - 1} variante(s) selon l'écran)` : e.reasons[0],
+      pages: e.pages,
+    }))
+    .sort((x, y) => x.criterion.topic.number - y.criterion.topic.number || x.criterion.id.localeCompare(y.criterion.id, "fr", { numeric: true }));
 }
 
 /**

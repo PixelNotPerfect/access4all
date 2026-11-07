@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="utf-8"><title>Accueil</title>
+<style>
+  body { color: #333; font: 16px/1.4 sans-serif; margin: 0; }
+  a:focus, button:focus { outline: none; }
+  .sticky { position: fixed; bottom: 0; left: 0; right: 0; height: 120px; background: #222; color: #fff; }
+  .large { width: 900px; background: #eee; }
+  .box { height: 1.2em; line-height: 1.2; overflow: hidden; width: 600px; margin: 0; }
+  .menu ul { display: none; }
+  .menu:hover ul { display: block; }
+  .big { font-size: 28px; font-weight: 700; }
+</style></head>
+<body>
+  <div class="menu"><a href="#a">Produits</a><ul><li><a href="#b">Sous-produit</a></li></ul></div>
+  <a href="#c">Lien 1</a> <a href="#d">Lien 2</a> <a href="#e">Lien 3</a>
+  <div class="big">Nos services</div>
+  <p class="large">Un bloc trop large pour un petit écran avec beaucoup de texte dedans.</p>
+  <p class="box">Texte court sur une ligne.</p>
+  <p>&nbsp;</p>
+  <div onclick="alert(1)">Ouvrir le panneau</div>
+  <form>
+    <label for="nom">Nom</label> <input id="nom" name="nom">
+    <input type="radio" name="civ" id="m" value="m"><label for="m">M.</label>
+    <input type="radio" name="civ" id="mme" value="mme"><label for="mme">Mme</label>
+    <button aria-label="Valider le formulaire">Envoyer</button>
+  </form>
+  <div style="height:2000px"></div>
+  <div class="sticky">Bandeau cookies <a href="#ok" style="position:absolute;bottom:200px">Masqué</a></div>
+  <a href="#fin">Dernier lien</a>
+</body>
+</html>

@@ -24,8 +24,27 @@ Pour chaque page, l'outil :
 
 1. ouvre la page dans Chromium et lance axe-core (94 règles reliées au RGAA) ;
 2. regroupe les erreurs **par critère RGAA** et les classe **du plus grave au plus rapide à corriger** ;
-3. donne pour chaque étape les éléments en cause (sélecteur CSS), **ce qu'il faut faire** et le lien vers le critère officiel ;
-4. liste les points qu'axe n'a pas pu trancher, puis les **vérifications manuelles** restantes (un outil automatique ne détecte qu'une partie des problèmes).
+3. pilote ensuite la page comme un auditeur (voir ci-dessous) pour tester ce qu'axe-core ne sait pas tester ;
+4. donne pour chaque étape les éléments en cause (sélecteur CSS), **ce qu'il faut faire** et le lien vers le critère officiel ;
+5. liste les points à confirmer à la main, les critères **vérifiés automatiquement** (conformes ou non applicables) et les **vérifications manuelles** qui restent vraiment humaines.
+
+### Tests complémentaires (au-delà d'axe-core)
+
+Après axe-core, la commande manipule la page dans Chromium :
+
+| Test | Critères |
+|---|---|
+| Tabulation dans toute la page, capture de chaque élément avec et sans focus | 10.7 focus visible, 12.8 ordre, 12.9 piège clavier, 7.4 changement de page au focus, WCAG 2.4.11 focus masqué par un élément fixe |
+| Affichage à 320 px de large | 10.11 reflow |
+| Fenêtre deux fois plus étroite (zoom 200 %) | 10.4 texte coupé |
+| Interligne 1,5 et espacements WCAG forcés | 10.12 espacement du texte |
+| Téléphone en portrait puis en paysage | 13.9 orientation |
+| Analyse du DOM | 1.3 alternatives suspectes, 1.2 SVG, 7.3 éléments cliquables non focusables, 8.2 id dupliqués, 8.6 titre de page, 8.9 balises de mise en forme, 9.1 faux titres, 9.2/12.6 zones, 10.1 attributs de présentation, 11.5/11.6 regroupements, 11.9 intitulés de boutons, 11.10 champs obligatoires, 11.13 autocomplete, 12.7 lien d'évitement, 13.8 animations, 13.10 gestes |
+| Analyse des feuilles de styles | 10.2 contenus générés, 10.3 ordre CSS, 10.5 couleur de fond, 10.13/10.14/12.11 contenus au survol |
+| Détection des contenus absents | images, CAPTCHA, médias, tableaux, formulaires, mots de passe : les critères correspondants passent en « non applicable » |
+| Comparaison des écrans d'un produit | 8.6 titres identiques, 12.2 menu à la même place |
+
+Chaque critère tranché apparaît dans la section « Vérifié automatiquement » du rapport, avec la façon dont il a été vérifié, et sort de la liste des vérifications manuelles. Restent humains : la pertinence d'un texte (alternative, titre, intitulé), la compréhension sans CSS d'un contenu complexe, les contenus qui n'apparaissent qu'après une action (fenêtre, étape suivante d'un formulaire). Comptez quelques secondes de plus par écran ; `--rapide` désactive ces tests.
 
 ### Rapport HTML détaillé, élément par élément
 
@@ -85,7 +104,8 @@ Options utiles :
 | `--format json` | Pour l'intégration dans d'autres outils |
 | `--fail-on majeur` | Code de sortie 1 dès qu'un critère majeur ou bloquant échoue (défaut : `bloquant`) |
 | `--manual tout` | Lister aussi les vérifications manuelles mineures (`aucun` pour les masquer) |
-| `--viewport 320x640` | Tester l'affichage étroit (reflow, critère 10.11) |
+| `--rapide` | Sans les tests complémentaires : plus rapide, plus de vérifications manuelles |
+| `--viewport 320x640` | Scanner avec axe-core en affichage étroit |
 | `--wait 2000` | Laisser le temps à une application JavaScript de s'afficher |
 | `--no-wcag22` | Se limiter strictement au RGAA 4.1.2 |
 

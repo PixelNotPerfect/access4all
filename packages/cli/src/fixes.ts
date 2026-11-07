@@ -388,6 +388,229 @@ export const ruleFixes: Record<string, RuleFix> = {
     fix: "Donner au moins 24 × 24 px à la cible (padding, min-width/min-height) ou l'espacer des cibles voisines.",
     why: "Les personnes avec des tremblements, une motricité réduite, ou simplement sur mobile avec le pouce, cliquent à côté.",
   },
+
+  // -------------------------------------------------------------------------
+  // Tests complémentaires access4all (navigateur piloté au clavier, zoom, reflow…)
+  // -------------------------------------------------------------------------
+  "a4a-focus-invisible": {
+    problem: "Quand cet élément reçoit le focus au clavier, rien ne change à l'écran : on ne sait pas où l'on se trouve.",
+    fix: "Ne jamais retirer le contour de focus sans le remplacer. Ajouter un style :focus-visible bien contrasté (contour d'au moins 2 px).",
+    why: "Les personnes qui naviguent au clavier (handicap moteur, malvoyance, utilisateurs avancés) suivent le focus pour savoir où elles sont ; sans lui, elles sont perdues.",
+    suggest: (o) => `${o.selector}:focus-visible {\n  outline: 3px solid #0a58ca;\n  outline-offset: 2px;\n}`,
+  },
+  "a4a-focus-element-cache": {
+    problem: "Le focus clavier arrive sur un élément invisible (lien d'un menu fermé, élément hors écran ou masqué en opacité).",
+    fix: "Retirer l'élément du parcours clavier quand il est masqué : display:none, visibility:hidden, attribut hidden ou inert sur le conteneur fermé. Le rendre visible s'il doit rester atteignable (lien d'évitement : l'afficher au focus).",
+    why: "La personne au clavier appuie sur Tab sans rien voir bouger : elle croit le site bloqué ou perd sa position.",
+  },
+  "a4a-focus-masque": {
+    problem: "L'élément qui reçoit le focus est entièrement caché derrière un élément fixe (en-tête collant, bandeau cookies, bouton flottant).",
+    fix: "Ajouter scroll-padding-top (et scroll-padding-bottom) égal à la hauteur de l'en-tête ou du bandeau fixe, ou ne plus le fixer.",
+    why: "Au clavier, la page défile jusqu'à l'élément mais il reste sous l'en-tête : la personne ne voit pas où elle est.",
+    suggest: () => "html {\n  scroll-padding-top: [hauteur de l'en-tête fixe, ex. 96px];\n}",
+  },
+  "a4a-piege-clavier": {
+    problem: "La touche Tab tourne en rond dans une partie de la page : impossible d'en sortir au clavier.",
+    fix: "Ne retenir le focus que dans une fenêtre modale ouverte, avec un bouton et la touche Échap pour la fermer. Ailleurs, ne pas intercepter Tab.",
+    why: "Une personne qui ne peut pas utiliser de souris est bloquée : la suite du site lui est inaccessible.",
+  },
+  "a4a-ordre-tabulation": {
+    problem: "Le focus remonte nettement dans la page en tabulant : l'ordre clavier ne suit peut-être pas l'ordre de lecture.",
+    fix: "Vérifier l'ordre en tabulant. S'il est illogique, réordonner le code HTML plutôt que d'utiliser CSS order ou un tabindex positif.",
+    why: "Les personnes au clavier ou au lecteur d'écran découvrent la page dans l'ordre du code ; un ordre incohérent la rend difficile à comprendre.",
+  },
+  "a4a-changement-contexte-focus": {
+    problem: "Le simple fait de tabuler sur cet élément change de page, sans clic ni validation.",
+    fix: "Ne déclencher la navigation qu'à l'activation (clic, Entrée), jamais sur focus ou change.",
+    why: "Les personnes au clavier ou au lecteur d'écran sont emmenées ailleurs sans l'avoir voulu et perdent le fil.",
+  },
+  "a4a-reflow": {
+    problem: "À 320 px de large (zoom à 400 % ou petit téléphone), cet élément dépasse de l'écran : contenu coupé ou défilement horizontal.",
+    fix: "Supprimer les largeurs fixes en px (width, min-width), utiliser max-width:100%, flex-wrap, des grilles fluides et des media queries.",
+    why: "Les personnes malvoyantes zooment fortement ; si elles doivent défiler dans les deux sens pour lire chaque ligne, la lecture devient épuisante, voire impossible.",
+  },
+  "a4a-zoom-texte-coupe": {
+    problem: "Avec un zoom à 200 %, le texte de cet élément est coupé.",
+    fix: "Éviter les hauteurs fixes sur les conteneurs de texte (height en px avec overflow:hidden) : utiliser min-height et des unités relatives (rem, em).",
+    why: "Les personnes malvoyantes agrandissent le texte ; s'il est tronqué, elles perdent l'information.",
+  },
+  "a4a-espacement-texte": {
+    problem: "Quand on augmente l'interligne et l'espacement des lettres et des mots, le texte de cet élément est coupé.",
+    fix: "Laisser les conteneurs de texte grandir : pas de height fixe avec overflow:hidden, préférer min-height et padding.",
+    why: "Les personnes dyslexiques ou malvoyantes augmentent l'espacement du texte (extension, feuille de styles) pour pouvoir lire.",
+  },
+  "a4a-orientation": {
+    problem: "Une partie du contenu disparaît quand on tourne l'écran (portrait ou paysage).",
+    fix: "Ne pas masquer ni bloquer de contenu selon l'orientation (media query orientation) ; adapter la mise en page aux deux.",
+    why: "Certaines personnes ont leur tablette ou leur téléphone fixé dans une orientation (fauteuil roulant, support) et ne peuvent pas le tourner.",
+  },
+  "a4a-survol-seul": {
+    problem: "Un contenu (sous-menu, infobulle) ne s'affiche qu'au survol de la souris.",
+    fix: "Ajouter la même règle avec :focus-within (ou :focus) pour que le contenu s'affiche aussi au clavier.",
+    why: "Les personnes qui naviguent au clavier ou avec une commande vocale n'ont pas de survol : le contenu leur reste caché.",
+    suggest: (o) => {
+      const sel = o.data?.selector;
+      return typeof sel === "string" ? `${sel},\n${sel.replace(/:hover/g, ":focus-within")} {\n  /* mêmes déclarations que la règle :hover */\n}` : undefined;
+    },
+  },
+  "a4a-infobulle-non-masquable": {
+    problem: "L'infobulle reste affichée après un appui sur Échap.",
+    fix: "Fermer l'infobulle sur Échap (écouteur keydown) sans déplacer le focus.",
+    why: "Une infobulle qui recouvre le contenu gêne les personnes qui zooment : elles doivent pouvoir la fermer sans bouger la souris.",
+  },
+  "a4a-clic-non-focusable": {
+    problem: "Cet élément réagit au clic mais ne peut pas recevoir le focus clavier.",
+    fix: "Utiliser un vrai <button> (action) ou <a href> (navigation). À défaut : tabindex=\"0\", un role adapté et la gestion des touches Entrée et Espace.",
+    why: "Les personnes qui n'utilisent pas de souris ne peuvent pas atteindre ni activer cette fonction.",
+    suggest: (o) => {
+      const m = /^<([a-z][\w-]*)([^>]*)>([\s\S]*)<\/\1>$/i.exec(o.fullHtml);
+      if (!m) return undefined;
+      const attrs = m[2].replace(/\s(role|tabindex)=("[^"]*"|'[^']*')/gi, "");
+      return `<button type="button"${attrs}>${m[3]}</button>`;
+    },
+  },
+  "a4a-select-onchange": {
+    problem: "Changer d'option dans cette liste déroulante déclenche peut-être une action immédiate (envoi, changement de page).",
+    fix: "Ajouter un bouton de validation après la liste, ou prévenir l'utilisateur avant la liste.",
+    why: "Au clavier, chaque flèche change l'option : la personne est emmenée ailleurs avant d'avoir fait son choix.",
+  },
+  "a4a-statut-absent": {
+    problem: "La page a un formulaire mais aucune zone de message de statut (role=\"status\", role=\"alert\", aria-live).",
+    fix: "Afficher les messages de confirmation, d'erreur ou de résultats dans un conteneur role=\"status\" (ou role=\"alert\" pour les erreurs) présent dès le chargement.",
+    why: "Sans zone de statut, le lecteur d'écran n'annonce pas « Message envoyé » ou « 3 erreurs » : la personne ne sait pas ce qui s'est passé.",
+    suggest: () => '<div role="status" class="message-statut"><!-- message inséré ici après l\'envoi --></div>',
+  },
+  "a4a-id-duplique": {
+    problem: "Le même identifiant (id) est utilisé sur plusieurs éléments.",
+    fix: "Rendre chaque id unique dans la page (composants répétés : générer un suffixe).",
+    why: "Les étiquettes (for), aria-labelledby et aria-describedby visent le premier élément trouvé : les autres champs perdent leur nom pour le lecteur d'écran.",
+  },
+  "a4a-titre-page-generique": {
+    problem: "Le titre de la page (onglet) est générique et ne dit pas où l'on est.",
+    fix: "Donner un titre unique de la forme « Sujet de la page – Nom du site ».",
+    why: "C'est la première chose annoncée par le lecteur d'écran et ce qui permet de distinguer les onglets.",
+  },
+  "a4a-titre-page-duplique": {
+    problem: "Plusieurs écrans ont exactement le même titre de page.",
+    fix: "Donner à chaque écran un titre qui le distingue : « Contact – Nom du site », « Panier – Nom du site »…",
+    why: "La personne aveugle ne sait pas si la page a changé, ni sur quel écran elle se trouve.",
+  },
+  "a4a-balise-presentation": {
+    problem: "Des balises HTML servent uniquement à créer de l'espace (paragraphes vides, sauts de ligne successifs).",
+    fix: "Supprimer les paragraphes vides et <br> successifs ; gérer l'espacement avec margin ou padding en CSS.",
+    why: "Le lecteur d'écran annonce ces éléments vides (« vide », « ligne vide ») et la structure du texte devient confuse.",
+  },
+  "a4a-faux-titre": {
+    problem: "Ce texte a l'apparence d'un titre (grand et gras) mais n'est pas balisé comme un titre.",
+    fix: "S'il introduit une section, le baliser en <h2>, <h3>… selon le niveau ; sinon, ignorer.",
+    why: "Les personnes aveugles naviguent de titre en titre ; un titre seulement visuel leur est invisible.",
+    suggest: (o) => {
+      const m = /^<([a-z][\w-]*)([^>]*)>([\s\S]*)<\/\1>$/i.exec(o.fullHtml);
+      return m ? `<h2${m[2]}>${m[3]}</h2>` : undefined;
+    },
+  },
+  "a4a-zones-manquantes": {
+    problem: "Certaines zones de la page (en-tête, navigation, contenu principal, pied de page) ne sont pas identifiées.",
+    fix: "Utiliser les balises <header>, <nav>, <main> et <footer> (une seule zone main) pour les zones correspondantes.",
+    why: "Les lecteurs d'écran proposent d'aller directement à ces zones ; sans elles, il faut tout parcourir.",
+  },
+  "a4a-attribut-presentation": {
+    problem: "La présentation est définie dans le HTML (balise ou attribut de présentation) au lieu des CSS.",
+    fix: "Retirer ces balises ou attributs et reporter la mise en forme dans la feuille de styles.",
+    why: "Les personnes qui adaptent l'affichage (couleurs, taille, espacements) ne peuvent pas modifier une présentation figée dans le HTML.",
+    suggest: (o) => {
+      const attrs = o.data?.attrs;
+      if (!Array.isArray(attrs) || !attrs.length) return undefined;
+      return attrs.reduce<string>((h, a) => removeAttr(h, String(a)), o.fullHtml);
+    },
+  },
+  "a4a-contenu-css": {
+    problem: "Un texte ou une icône est générée en CSS (::before ou ::after) : l'information disparaît sans les styles.",
+    fix: "Mettre l'information dans le HTML ; garder le CSS pour la décoration, et masquer les icônes décoratives.",
+    why: "Sans CSS ou avec certains lecteurs d'écran, ce contenu n'existe pas.",
+  },
+  "a4a-ordre-css": {
+    problem: "L'ordre d'affichage est modifié en CSS : sans styles, au clavier et au lecteur d'écran, l'ordre est différent.",
+    fix: "Ordonner le code HTML dans l'ordre de lecture voulu ; n'utiliser order ou *-reverse que si le sens reste compréhensible dans l'ordre du code.",
+    why: "Le lecteur d'écran et le clavier suivent le code, pas l'affichage : l'information peut devenir incohérente.",
+  },
+  "a4a-couleurs-css": {
+    problem: "La couleur du texte est déclarée mais pas la couleur de fond de la page.",
+    fix: "Déclarer background-color sur html ou body (et sur chaque bloc qui change la couleur du texte).",
+    why: "Une personne qui a choisi un fond sombre par défaut verra un texte foncé sur fond sombre, illisible.",
+    suggest: () => "body {\n  background-color: #fff; /* ou la couleur de fond du site */\n}",
+  },
+  "a4a-forme-position": {
+    problem: "Le texte désigne un élément par sa position, sa forme ou sa couleur.",
+    fix: "Désigner aussi l'élément par son nom ou son texte (« le bouton Envoyer » plutôt que « le bouton vert à droite »).",
+    why: "Une personne aveugle ou qui zoome ne perçoit ni la position, ni la forme, ni la couleur.",
+  },
+  "a4a-groupe-sans-fieldset": {
+    problem: "Ces boutons radio ou cases à cocher répondent à la même question mais ne sont pas regroupés.",
+    fix: "Les entourer d'un <fieldset> avec une <legend> qui pose la question.",
+    why: "Le lecteur d'écran annonce « Oui », « Non » sans la question : la personne ne sait pas à quoi elle répond.",
+    suggest: (o) => `<fieldset>\n  <legend>[Question posée par ce groupe]</legend>\n  ${o.fullHtml}\n</fieldset>`,
+  },
+  "a4a-groupe-sans-legende": {
+    problem: "Ce regroupement de champs n'a pas de légende.",
+    fix: "Ajouter une <legend> en premier enfant du <fieldset> (ou aria-labelledby sur le role=\"group\").",
+    why: "Le lecteur d'écran annonce le groupe sans dire de quoi il s'agit.",
+  },
+  "a4a-bouton-generique": {
+    problem: "L'intitulé du bouton ne dit peut-être pas clairement ce qu'il fait.",
+    fix: "Utiliser un verbe d'action précis : « Envoyer ma demande », « Ajouter au panier », « Rechercher ».",
+    why: "Hors contexte (liste des boutons du lecteur d'écran), « OK » ou « Valider » ne dit rien de l'action.",
+  },
+  "a4a-bouton-nom-visible": {
+    problem: "Le nom donné au bouton pour les lecteurs d'écran (aria-label) ne contient pas le texte affiché.",
+    fix: "Faire commencer l'aria-label par le texte visible, ou supprimer l'aria-label si le texte visible suffit.",
+    why: "Les personnes qui pilotent à la voix disent le texte qu'elles voient (« clique sur Envoyer ») : il doit correspondre au nom du bouton.",
+    suggest: (o) => removeAttr(o.fullHtml, "aria-label"),
+  },
+  "a4a-champ-obligatoire": {
+    problem: "Ce champ est obligatoire, mais son étiquette ne l'indique pas.",
+    fix: "Indiquer « (obligatoire) » dans l'étiquette, ou un astérisque expliqué en haut du formulaire.",
+    why: "Tout le monde découvre l'obligation seulement à l'envoi, par une erreur ; c'est particulièrement pénible au lecteur d'écran.",
+  },
+  "a4a-autocomplete-manquant": {
+    problem: "Ce champ demande une information personnelle mais n'a pas d'attribut autocomplete.",
+    fix: "Ajouter l'attribut autocomplete avec la valeur qui correspond à l'information demandée.",
+    why: "Le navigateur peut alors remplir le champ automatiquement : précieux pour les personnes avec des troubles moteurs, cognitifs ou de mémoire.",
+    suggest: (o) => (typeof o.data?.autocomplete === "string" ? setAttr(o.fullHtml, "autocomplete", o.data.autocomplete) : undefined),
+  },
+  "a4a-navigation-inconstante": {
+    problem: "Le menu de navigation n'est pas au même endroit sur cet écran que sur les autres.",
+    fix: "Garder le menu principal à la même place et dans le même ordre sur tous les écrans.",
+    why: "Les personnes malvoyantes ou avec des troubles cognitifs s'appuient sur des repères stables pour se déplacer dans le site.",
+  },
+  "a4a-lien-evitement": {
+    problem: "Il n'y a pas de lien d'évitement (« Aller au contenu ») en début de page, ou il pointe vers une cible absente.",
+    fix: "Ajouter, en tout premier élément de la page, un lien vers le contenu principal, visible au moins quand il reçoit le focus.",
+    why: "Sans ce lien, une personne au clavier doit tabuler à travers tout le menu sur chaque page.",
+    suggest: () => '<a href="#contenu" class="lien-evitement">Aller au contenu</a>\n…\n<main id="contenu" tabindex="-1">',
+  },
+  "a4a-alt-suspect": {
+    problem: "Le texte de remplacement de cette image ne semble pas décrire son information.",
+    fix: "Écrire ce que l'image apporte dans son contexte (pas « image », ni le nom du fichier) ; alt=\"\" si elle est décorative.",
+    why: "Le lecteur d'écran lit ce texte à la place de l'image : « DSC_0042.jpg » ou « image » n'apprend rien.",
+    suggest: (o) => setAttr(o.fullHtml, "alt", "[information transmise par l'image]"),
+  },
+  "a4a-svg-sans-statut": {
+    problem: "Cette image SVG n'est ni masquée aux lecteurs d'écran ni nommée.",
+    fix: "Décorative (ou doublée par un texte) : aria-hidden=\"true\" focusable=\"false\". Porteuse d'information : role=\"img\" et aria-label.",
+    why: "Certains lecteurs d'écran annoncent « image » ou lisent son code ; d'autres l'ignorent alors qu'elle porte une information.",
+    suggest: (o) => setAttr(setAttr(o.fullHtml, "aria-hidden", "true"), "focusable", "false"),
+  },
+  "a4a-animation": {
+    problem: "Ce contenu bouge ou défile plus de 5 secondes.",
+    fix: "Ajouter un bouton visible pour le mettre en pause ou l'arrêter, et ne pas le lancer automatiquement si prefers-reduced-motion est activé.",
+    why: "Le mouvement empêche de se concentrer (troubles de l'attention) et peut provoquer des malaises (troubles vestibulaires).",
+  },
+  "a4a-glisser": {
+    problem: "Ce composant s'utilise peut-être par glisser ou par un geste (balayage, pincement).",
+    fix: "Prévoir des boutons (précédent, suivant, zoom +/−, monter/descendre) qui font la même chose en un simple clic.",
+    why: "Les personnes avec des troubles moteurs ou qui utilisent une commande vocale ne peuvent pas faire de geste précis.",
+  },
 };
 
 /** Explications pour une règle, avec repli sur l'aide axe. */

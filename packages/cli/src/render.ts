@@ -14,7 +14,7 @@ const MAX_OCCURRENCES = 5;
 
 function occurrenceLines(list: Occurrence[], md: boolean): string[] {
   const shown = list.slice(0, MAX_OCCURRENCES).map((o) =>
-    md ? `  - \`${o.selector}\` — ${o.help} (règle axe \`${o.rule}\`)` : `      • ${o.selector}  [${o.rule}] ${o.help}`,
+    md ? `  - \`${o.selector}\` — ${o.help} (${o.rule.startsWith("a4a-") ? "test" : "règle axe"} \`${o.rule}\`)` : `      • ${o.selector}  [${o.rule}] ${o.help}`,
   );
   if (list.length > MAX_OCCURRENCES) shown.push(md ? `  - … et ${list.length - MAX_OCCURRENCES} autre(s)` : `      … et ${list.length - MAX_OCCURRENCES} autre(s)`);
   return shown;
@@ -67,7 +67,11 @@ export function renderChecklist(list: Criterion[], persona: Persona, format: For
 export interface CheckReport {
   analyses: PageAnalysis[];
   manual: Criterion[];
+  /** Critères tranchés automatiquement (conforme ou non applicable sur tous les écrans). */
+  settled?: Array<{ criterion: Criterion; status: "C" | "NA" | "C/NA"; reason: string; pages: number }>;
 }
+
+const SETTLED_LABEL = { C: "conforme", NA: "non applicable", "C/NA": "conforme ou non applicable" } as const;
 
 export function renderCheck(report: CheckReport, format: Format): string {
   if (format === "json") {
@@ -80,7 +84,9 @@ export function renderCheck(report: CheckReport, format: Format): string {
           reviews: a.reviews.map((f) => ({ criterion: f.criterion.id, toReview: f.toReview })),
           unmapped: a.unmapped,
           passedCriteria: a.passedCriteria,
+          verdicts: a.verdicts.map(({ criterion, status, reason }) => ({ criterion, status, reason })),
         })),
+        autoVerified: (report.settled ?? []).map((s) => ({ criterion: s.criterion.id, status: s.status, reason: s.reason })),
         manualChecks: report.manual.map((c) => c.id),
       },
       null,
@@ -116,6 +122,13 @@ export function renderCheck(report: CheckReport, format: Format): string {
     }
   }
 
+  const settled = report.settled ?? [];
+  if (settled.length) {
+    out.push(
+      md ? "\n## Vérifié automatiquement\n" : "\nVérifié automatiquement (plus de vérification manuelle)",
+      ...settled.map((s) => (md ? `- **${s.criterion.id}** ${SETTLED_LABEL[s.status]} — ${s.reason}` : `    ✓ ${s.criterion.id} ${SETTLED_LABEL[s.status]} — ${s.reason}`)),
+    );
+  }
   if (report.manual.length) {
     out.push(
       md ? "\n## Vérifications manuelles avant recette\n" : "\nVérifications manuelles avant recette",
