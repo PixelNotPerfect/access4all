@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import { realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve, join } from "node:path";
+import { tmpdir } from "node:os";
 import { mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import type { Impact, Persona } from "@access4all/core";
@@ -39,8 +40,9 @@ Usage :
 
 Options communes :
   -f, --format <text|markdown|json|html>
-                                      Format de sortie (défaut : text). html (check seulement) : rapport
-                                      détaillé avec une capture de chaque élément à corriger
+                                      Format de sortie. « check » au terminal : html (rapport détaillé,
+                                      une capture par élément à corriger, ouvert dans le navigateur) ;
+                                      avec -o : selon l'extension (.html) ; en CI ou redirigé : text
   -o, --output <fichier>              Écrire le résultat dans un fichier
       --no-wcag22                     Se limiter au RGAA 4.1.2 (sans les compléments WCAG 2.2)
 
@@ -56,20 +58,29 @@ Options de « check » :
       --produit <id>                  Scanner les écrans du produit <id> (voir « produit »)
       --no-open                       Ne pas ouvrir le rapport HTML dans le navigateur (automatique en CI)
 
-Rapport HTML : sans -o, il est rangé hors de votre code puis ouvert dans le navigateur :
-~/access4all-rapports/<id-produit ou domaine>/<date>_<heure>.html
+      --garder                        Garder le rapport dans ~/access4all-rapports/<domaine>/ (sinon : dossier temporaire)
+
+Rapport HTML : ouvert directement dans le navigateur, sans fichier à ranger (dossier temporaire du système).
+Avec --produit ou --garder, il est conservé dans ~/access4all-rapports/<id-produit ou domaine>/<date>_<heure>.html
       --chromium <chemin>             Exécutable Chromium à utiliser (ou variable ACCESS4ALL_CHROMIUM)
 
 Exemples :
+  access4all check http://localhost:3000            # ouvre le rapport dans le navigateur
   access4all check http://localhost:3000 http://localhost:3000/contact
   access4all check build/index.html --format markdown -o rapport-a11y.md
-  access4all check https://exemple.fr --format html
+  access4all check https://client1.fr --garder
   access4all checklist --role design --format markdown -o revue-maquettes.md
 `;
 
 const FORMATS: Array<Format | "html"> = ["text", "markdown", "json", "html"];
-/** Chemin par défaut d'un rapport : ~/access4all-rapports/<domaine>/<date>_<heure>.html */
-export function defaultReportPath(firstUrl: string, now = new Date()): string {
+/** Dossier temporaire des rapports de « check » sur une URL : rien à ranger, le système le vide. */
+export const TMP_REPORTS_DIR = join(tmpdir(), "access4all");
+
+/**
+ * Chemin par défaut d'un rapport sur une ou plusieurs URL :
+ * <dossier temporaire>/access4all/<domaine>/<date>_<heure>.html (ou sous ~/access4all-rapports avec --garder).
+ */
+export function defaultReportPath(firstUrl: string, now = new Date(), dir = TMP_REPORTS_DIR): string {
   let site = "fichiers-locaux";
   try {
     const u = new URL(firstUrl);
@@ -78,7 +89,7 @@ export function defaultReportPath(firstUrl: string, now = new Date()): string {
     // URL invalide : dossier générique.
   }
   site = site.replace(/[^a-z0-9.-]+/gi, "_");
-  return join(REPORTS_DIR, site, `${stamp(now)}.html`);
+  return join(dir, site, `${stamp(now)}.html`);
 }
 
 /** Ouvre un fichier avec l'application par défaut (le navigateur pour un .html). */
@@ -94,6 +105,15 @@ function openInBrowser(path: string) {
     fallback();
   }
 }
+/** Résumé d'une ligne : « 12 problèmes sur 3 critères, 1 écran en erreur ». */
+function summary(analyses: ReturnType<typeof analyze>[]): string {
+  const criteria = new Set(analyses.flatMap((a) => a.failures.map((f) => f.criterion.id))).size;
+  const errors = analyses.filter((a) => a.error).length;
+  const parts = [criteria === 0 ? "aucun critère en échec détecté automatiquement" : `${criteria} critère${criteria > 1 ? "s" : ""} RGAA/WCAG en échec`];
+  if (errors) parts.push(`${errors} écran${errors > 1 ? "s" : ""} en erreur`);
+  return parts.join(", ");
+}
+
 const THRESHOLDS = ["bloquant", "majeur", "mineur", "aucun"] as const;
 
 function fail(msg: string): never {
@@ -120,7 +140,7 @@ export async function main(argv: string[]): Promise<number> {
     args: argv,
     allowPositionals: true,
     options: {
-      format: { type: "string", short: "f", default: "text" },
+      format: { type: "string", short: "f" },
       output: { type: "string", short: "o" },
       "no-wcag22": { type: "boolean", default: false },
       "fail-on": { type: "string", default: "bloquant" },
@@ -130,6 +150,7 @@ export async function main(argv: string[]): Promise<number> {
       chromium: { type: "string" },
       "no-screenshots": { type: "boolean", default: false },
       "no-open": { type: "boolean", default: false },
+      garder: { type: "boolean", default: false },
       rapide: { type: "boolean", default: false },
       role: { type: "string" },
       produit: { type: "string" },
@@ -142,7 +163,10 @@ export async function main(argv: string[]): Promise<number> {
     process.stdout.write(HELP);
     return 0;
   }
-  const format = values.format as Format | "html";
+  // Au terminal, « check » ouvre directement le rapport HTML ; en CI ou redirigé, il garde la sortie texte.
+  const interactive = !!process.stdout.isTTY && !process.env.CI;
+  const format = (values.format ??
+    (command === "check" && (values.output ? /\.html?$/i.test(values.output) : interactive) ? "html" : "text")) as Format | "html";
   if (!FORMATS.includes(format)) fail(`format inconnu « ${values.format} »`);
   const wcag22 = !values["no-wcag22"];
 
@@ -182,8 +206,11 @@ export async function main(argv: string[]): Promise<number> {
       viewport = { width: Number(m[1]), height: Number(m[2]) };
     }
 
+    const started = Date.now();
+    const log = (m: string) => process.stderr.write(`${m}\n`);
+    if (!values.rapide) log("Tests complets (axe-core, clavier, zoom, reflow, captures) : compter 30 s à 2 min par écran.");
     const results = await scanUrls(targets, {
-      onPage: targets.length > 1 ? (i, url) => process.stderr.write(`[${i + 1}/${targets.length}] ${url}\n`) : undefined,
+      onPage: (i, url) => log(targets.length > 1 ? `[${i + 1}/${targets.length}] Scan de ${url}…` : `Scan de ${url}…`),
       executablePath: values.chromium,
       viewport,
       waitMs: values.wait ? Number(values.wait) : undefined,
@@ -199,15 +226,18 @@ export async function main(argv: string[]): Promise<number> {
         : manualChecklist("dev", { wcag22, exclude: [...failed, ...settled.map((s) => s.criterion.id)] }).filter(
             (c) => values.manual === "tout" || c.impact !== "mineur",
           );
+    log(`Scan terminé en ${Math.round((Date.now() - started) / 1000)} s : ${summary(analyses)}.`);
     if (format === "html") {
       const path = values.output
         ? resolve(values.output)
         : values.produit
           ? join(productDir(values.produit), `${stamp()}.html`)
-          : defaultReportPath(results[0]?.url ?? targets[0]);
+          : defaultReportPath(results[0]?.url ?? targets[0], new Date(), values.garder ? REPORTS_DIR : TMP_REPORTS_DIR);
       mkdirSync(resolve(path, ".."), { recursive: true });
-      emit(renderHtmlReport({ analyses, manual, settled }, { productName }), path);
-      if (!values["no-open"] && !process.env.CI) openInBrowser(path);
+      writeFileSync(path, renderHtmlReport({ analyses, manual, settled }, { productName }));
+      const open = !values["no-open"] && !process.env.CI;
+      if (open) openInBrowser(path);
+      log(`${open ? "Rapport ouvert dans le navigateur" : "Rapport"} : ${pathToFileURL(path).href}`);
     } else {
       emit(renderCheck({ analyses, manual, settled }, format), values.output);
     }
