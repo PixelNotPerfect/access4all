@@ -30,10 +30,10 @@ Pour chaque page, l'outil :
 ### Rapport HTML détaillé, élément par élément
 
 ```bash
-npx access4all check http://localhost:3000 http://localhost:3000/contact --format html -o rapport-a11y.html
+npx access4all check https://client1.fr https://client1.fr/contact --format html
 ```
 
-Le script produit une page HTML autonome (images incluses, un seul fichier à partager ou joindre à un ticket). Pour **chaque élément à corriger**, elle montre :
+Le script produit une page HTML autonome (images incluses, un seul fichier à partager ou joindre à un ticket) et **l'ouvre dans le navigateur**. Elle est rangée **hors de votre code**, un dossier par site : `~/access4all-rapports/client1.fr/2026-11-07_09h05.html`. Les rapports précédents restent dans ce dossier, ce qui permet de suivre l'évolution d'un site. Pour **chaque élément à corriger**, elle montre :
 
 - une **capture d'écran** de l'élément, encadré en rose dans son contexte ;
 - son **état actuel** : sélecteur CSS et code HTML (et, pour un contraste, les couleurs mesurées et le ratio) ;
@@ -41,13 +41,46 @@ Le script produit une page HTML autonome (images incluses, un seul fichier à pa
 - **ce qu'il faut faire**, avec une **proposition de code corrigé** (ou de couleur conforme la plus proche pour un contraste) ;
 - **pourquoi** : qui est gêné et comment, avec les références RGAA et WCAG.
 
-Le rapport est lui-même accessible (structure de titres, sommaire, tableau de synthèse, gravité indiquée en texte et pas seulement en couleur, mode sombre, lisible sur mobile et à l'impression). Sans `-o`, il est écrit dans `rapport-accessibilite.html`. `--no-screenshots` donne un rapport plus léger, sans captures.
+Le rapport est lui-même accessible (structure de titres, sommaire, tableau de synthèse, gravité indiquée en texte et pas seulement en couleur, mode sombre, lisible sur mobile et à l'impression). `-o chemin.html` choisit un autre emplacement, `--no-open` évite l'ouverture du navigateur (jamais ouvert en CI), `--no-screenshots` donne un rapport plus léger, sans captures.
+
+### Un produit de plusieurs écrans (un client, 100 écrans…)
+
+Chaque produit a son fichier `produit.json`, rangé **hors du code** avec ses rapports, dans `~/access4all-rapports/<identifiant>/`. On le crée une fois :
+
+```bash
+npx access4all produit client1 https://client1.fr --nom "Client1 – Espace adhérent"
+```
+
+puis on complète la liste des écrans :
+
+```json
+{
+  "nom": "Client1 – Espace adhérent",
+  "pages": ["https://client1.fr/", "https://client1.fr/contact", "https://client1.fr/compte/factures"],
+  "sitemap": "https://client1.fr/sitemap.xml",
+  "exclure": ["\\.(pdf|jpg|jpeg|png|zip|docx?)$", "/blog/"],
+  "max": 200
+}
+```
+
+- `pages` : les écrans à scanner ; `sitemap` (facultatif) ajoute toutes les pages du sitemap ;
+- `exclure` : expressions régulières des URL à ignorer ; `max` : nombre maximal d'écrans (200 par défaut).
+
+Ensuite, à chaque passage :
+
+```bash
+npx access4all check --produit client1 --format html
+```
+
+Le script scanne tous les écrans (un écran en erreur n'arrête pas le scan), écrit **un seul rapport** dans `~/access4all-rapports/client1/<date>_<heure>.html` et l'ouvre dans le navigateur. Le rapport commence par les **problèmes communs à plusieurs écrans** (même élément, même code : en-tête, menu, pied de page, composant partagé), à corriger une seule fois, avec la liste des écrans concernés ; puis le détail propre à chaque écran. Les rapports successifs restent dans le dossier du produit pour suivre son évolution.
+
+La variable d'environnement `ACCESS4ALL_RAPPORTS` permet de choisir un autre dossier que `~/access4all-rapports` (un dossier partagé de l'équipe par exemple).
 
 Options utiles :
 
 | Option | Effet |
 |---|---|
-| `--format html -o rapport.html` | Rapport détaillé avec capture de chaque élément (voir ci-dessus) |
+| `--format html` | Rapport détaillé avec capture de chaque élément, ouvert dans le navigateur (voir ci-dessus) |
 | `--format markdown -o rapport.md` | Rapport à joindre au ticket ou à la PR |
 | `--format json` | Pour l'intégration dans d'autres outils |
 | `--fail-on majeur` | Code de sortie 1 dès qu'un critère majeur ou bloquant échoue (défaut : `bloquant`) |

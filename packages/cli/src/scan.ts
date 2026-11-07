@@ -17,6 +17,8 @@ export interface ScanOptions {
   screenshots?: boolean;
   /** Nombre maximal de captures par page. Défaut : 60. */
   maxScreenshots?: number;
+  /** Appelé avant le scan de chaque page (progression). */
+  onPage?: (index: number, url: string) => void;
 }
 
 /** Marge autour de l'élément capturé, en px. */
@@ -27,7 +29,7 @@ const MAX_W = 1000;
 const MAX_H = 520;
 
 /** Capture chaque élément en violation, encadré, avec un peu de contexte autour. */
-async function captureNodes(page: import("playwright").Page, rules: AxeRuleResult[], max: number): Promise<void> {
+async function captureNodes(page: import("playwright").Page, rules: AxeRuleResult[], max: number, seen: Set<string>): Promise<void> {
   let count = 0;
   const vp = page.viewportSize() ?? { width: 1280, height: 800 };
   for (const rule of rules) {
@@ -40,6 +42,9 @@ async function captureNodes(page: import("playwright").Page, rules: AxeRuleResul
         continue;
       }
       if (count >= max) continue;
+      // Élément déjà capturé sur une page précédente (en-tête, pied de page…) : une capture suffit.
+      const key = `${rule.id}|${node.html}`;
+      if (seen.has(key)) continue;
       const box = await page
         .evaluate((sel) => {
           const el = document.querySelector(sel);
@@ -74,6 +79,7 @@ async function captureNodes(page: import("playwright").Page, rules: AxeRuleResul
         const buf = await page.screenshot({ clip: { x, y, width, height }, type: "jpeg", quality: 75, animations: "disabled" });
         node.screenshot = `data:image/jpeg;base64,${buf.toString("base64")}`;
         node.visibility = "visible";
+        seen.add(key);
         count++;
       } catch {
         // Capture impossible (élément hors écran, page instable) : le rapport s'en passe.
@@ -102,15 +108,24 @@ export async function scanUrls(urls: string[], options: ScanOptions = {}): Promi
   const locale = axeLocaleFr();
   const rules = mappedAxeRules();
   const out: AxeResults[] = [];
+  const seen = new Set<string>();
   try {
     const context = await browser.newContext({
       viewport: options.viewport ?? { width: 1280, height: 800 },
       locale: "fr-FR",
     });
-    for (const url of urls) {
+    for (const [i, url] of urls.entries()) {
+      options.onPage?.(i, url);
       const page = await context.newPage();
       try {
-        await page.goto(url, { waitUntil: "load", timeout: options.timeoutMs ?? 30_000 });
+        try {
+          await page.goto(url, { waitUntil: "load", timeout: options.timeoutMs ?? 30_000 });
+        } catch (e) {
+          // Sur un produit de plusieurs écrans, une page en erreur ne doit pas arrêter tout le scan.
+          if (urls.length === 1) throw e;
+          out.push({ url, violations: [], incomplete: [], passes: [], error: (e as Error).message.split("\n")[0] });
+          continue;
+        }
         if (options.waitMs) await page.waitForTimeout(options.waitMs);
         await page.addScriptTag({ content: source });
         const res = await page.evaluate(
@@ -137,7 +152,7 @@ export async function scanUrls(urls: string[], options: ScanOptions = {}): Promi
           },
           { rules, locale },
         );
-        if (options.screenshots) await captureNodes(page, res.violations, options.maxScreenshots ?? 60);
+        if (options.screenshots) await captureNodes(page, res.violations, options.maxScreenshots ?? 60, seen);
         out.push({ url: page.url(), title: await page.title(), ...res });
       } finally {
         await page.close();

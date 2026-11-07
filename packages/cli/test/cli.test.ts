@@ -4,6 +4,9 @@ import { analyze, exceedsThreshold, manualChecklist, type AxeResults } from "../
 import { renderCheck, renderChecklist } from "../src/render.js";
 import { scanUrls } from "../src/scan.js";
 import { renderHtmlReport } from "../src/render-html.js";
+import { defaultReportPath, REPORTS_DIR } from "../src/index.js";
+import { consolidate } from "../src/consolidate.js";
+import { parseSitemap, resolvePages } from "../src/product.js";
 import { closestCompliantColor, contrastRatio, ruleFixes, setAttr } from "../src/fixes.js";
 
 const fixture = (name: string) => pathToFileURL(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))).href;
@@ -147,4 +150,56 @@ describe("rapport HTML avec captures (Chromium)", () => {
     const html = renderHtmlReport({ analyses: [analyze(bad)], manual: [] });
     expect(html).toContain("data:image/jpeg;base64,");
   }, 60_000);
+});
+
+describe("emplacement du rapport HTML", () => {
+  it("range le rapport hors du code, par domaine et par date", () => {
+    const d = new Date(2026, 10, 7, 9, 5);
+    expect(defaultReportPath("https://www.client1.fr/contact", d)).toBe(`${REPORTS_DIR}/client1.fr/2026-11-07_09h05.html`);
+    expect(defaultReportPath("file:///tmp/page.html", d)).toBe(`${REPORTS_DIR}/fichiers-locaux/2026-11-07_09h05.html`);
+  });
+});
+
+describe("produits de plusieurs écrans", () => {
+  const page = (url: string, extra: AxeResults["violations"] = []): AxeResults => ({
+    url,
+    violations: [
+      { id: "link-name", impact: "serious", help: "Lien", helpUrl: "", nodes: [{ target: ["header a"], html: '<a href="/panier"><svg></svg></a>' }] },
+      ...extra,
+    ],
+    incomplete: [],
+    passes: [],
+  });
+
+  it("isole les problèmes communs à plusieurs écrans", () => {
+    const a = page("https://c.fr/");
+    const b = page("https://c.fr/contact", [{ id: "label", impact: "critical", help: "", helpUrl: "", nodes: [{ target: ["#email"], html: '<input id="email">' }] }]);
+    // Même élément, sélecteur différent : reste un problème commun.
+    const c = page("https://c.fr/panier");
+    c.violations[0].nodes[0].target = ["div:nth-child(2) > a"];
+    const { shared, sharedPages, pages } = consolidate([a, b, c].map((r) => analyze(r)));
+    expect(shared.map((f) => f.criterion.id)).toEqual(["6.2"]);
+    expect(shared[0].violations).toHaveLength(1);
+    expect([...sharedPages.values()][0]).toEqual([0, 1, 2]);
+    expect(pages[0].failures).toEqual([]);
+    expect(pages[1].failures.map((f) => f.criterion.id)).toEqual(["11.1"]);
+
+    const html = renderHtmlReport({ analyses: [a, b, c].map((r) => analyze(r)), manual: [] }, { productName: "Client1" });
+    expect(html).toContain("<title>Rapport d'accessibilité – Client1</title>");
+    expect(html).toContain('id="communs"');
+    expect(html).toContain("Présent sur 3 écrans");
+  });
+
+  it("signale un écran qui n'a pas pu être chargé sans arrêter le rapport", () => {
+    const html = renderHtmlReport({ analyses: [analyze(page("https://c.fr/")), analyze({ url: "https://c.fr/x", violations: [], incomplete: [], passes: [], error: "net::ERR" })], manual: [] });
+    expect(html).toContain("Écran non scanné");
+  });
+
+  it("lit un sitemap et applique les exclusions", async () => {
+    const xml = "<urlset><url><loc>https://c.fr/</loc></url><url><loc>https://c.fr/a?x=1&amp;y=2</loc></url></urlset>";
+    expect(parseSitemap(xml).pages).toEqual(["https://c.fr/", "https://c.fr/a?x=1&y=2"]);
+    expect(parseSitemap("<sitemapindex><sitemap><loc>https://c.fr/s1.xml</loc></sitemap></sitemapindex>").sitemaps).toEqual(["https://c.fr/s1.xml"]);
+    const pages = await resolvePages({ nom: "c", pages: ["https://c.fr/", "https://c.fr/", "https://c.fr/doc.pdf", "https://c.fr/b"], exclure: ["\\.pdf$"], max: 1 });
+    expect(pages).toEqual(["https://c.fr/"]);
+  });
 });
