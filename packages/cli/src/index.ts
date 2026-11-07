@@ -2,7 +2,10 @@
 import { parseArgs } from "node:util";
 import { realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
-import { resolve } from "node:path";
+import { resolve, join } from "node:path";
+import { homedir } from "node:os";
+import { mkdirSync } from "node:fs";
+import { spawn } from "node:child_process";
 import type { Impact, Persona } from "@access4all/core";
 import { analyze, exceedsThreshold, manualChecklist } from "./analyze.js";
 import { renderCheck, renderChecklist, type Format } from "./render.js";
@@ -38,17 +41,51 @@ Options de « check » :
       --wait <ms>                     Attendre après le chargement (applications JavaScript)
       --viewport <LxH>                Taille de fenêtre, ex. 320x640 pour tester le reflow (défaut : 1280x800)
       --no-screenshots                Rapport HTML sans captures d'écran
+      --no-open                       Ne pas ouvrir le rapport HTML dans le navigateur (automatique en CI)
+
+Rapport HTML : sans -o, il est rangé dans ~/access4all-rapports/<domaine>/<date>_<heure>.html
+(hors de votre code) puis ouvert dans le navigateur.
       --chromium <chemin>             Exécutable Chromium à utiliser (ou variable ACCESS4ALL_CHROMIUM)
 
 Exemples :
   access4all check http://localhost:3000 http://localhost:3000/contact
   access4all check build/index.html --format markdown -o rapport-a11y.md
-  access4all check http://localhost:3000 --format html -o rapport-a11y.html
+  access4all check https://exemple.fr --format html
   access4all checklist --role design --format markdown -o revue-maquettes.md
 `;
 
 const FORMATS: Array<Format | "html"> = ["text", "markdown", "json", "html"];
-const DEFAULT_HTML_OUTPUT = "rapport-accessibilite.html";
+/** Dossier des rapports HTML, hors de tout dépôt de code. */
+export const REPORTS_DIR = join(homedir(), "access4all-rapports");
+
+/** Chemin par défaut d'un rapport : ~/access4all-rapports/<domaine>/<date>_<heure>.html */
+export function defaultReportPath(firstUrl: string, now = new Date()): string {
+  let site = "fichiers-locaux";
+  try {
+    const u = new URL(firstUrl);
+    if (u.hostname) site = u.hostname.replace(/^www\./, "");
+  } catch {
+    // URL invalide : dossier générique.
+  }
+  site = site.replace(/[^a-z0-9.-]+/gi, "_");
+  const p = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}_${p(now.getHours())}h${p(now.getMinutes())}`;
+  return join(REPORTS_DIR, site, `${stamp}.html`);
+}
+
+/** Ouvre un fichier avec l'application par défaut (le navigateur pour un .html). */
+function openInBrowser(path: string) {
+  const [cmd, args] =
+    process.platform === "darwin" ? ["open", [path]] : process.platform === "win32" ? ["cmd", ["/c", "start", "", path]] : ["xdg-open", [path]];
+  const fallback = () => process.stderr.write(`Ouvrez le rapport dans votre navigateur : ${path}\n`);
+  try {
+    const child = spawn(cmd, args as string[], { stdio: "ignore", detached: true });
+    child.on("error", fallback);
+    child.unref();
+  } catch {
+    fallback();
+  }
+}
 const THRESHOLDS = ["bloquant", "majeur", "mineur", "aucun"] as const;
 
 function fail(msg: string): never {
@@ -84,6 +121,7 @@ export async function main(argv: string[]): Promise<number> {
       viewport: { type: "string" },
       chromium: { type: "string" },
       "no-screenshots": { type: "boolean", default: false },
+      "no-open": { type: "boolean", default: false },
       role: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -129,8 +167,14 @@ export async function main(argv: string[]): Promise<number> {
       values.manual === "aucun"
         ? []
         : manualChecklist("dev", { wcag22, exclude: failed }).filter((c) => values.manual === "tout" || c.impact !== "mineur");
-    if (format === "html") emit(renderHtmlReport({ analyses, manual }), values.output ?? DEFAULT_HTML_OUTPUT);
-    else emit(renderCheck({ analyses, manual }, format), values.output);
+    if (format === "html") {
+      const path = values.output ? resolve(values.output) : defaultReportPath(results[0]?.url ?? rest[0]);
+      mkdirSync(resolve(path, ".."), { recursive: true });
+      emit(renderHtmlReport({ analyses, manual }), path);
+      if (!values["no-open"] && !process.env.CI) openInBrowser(path);
+    } else {
+      emit(renderCheck({ analyses, manual }, format), values.output);
+    }
     return exceedsThreshold(analyses, failOn as Impact | "aucun") ? 1 : 0;
   }
 

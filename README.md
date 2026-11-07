@@ -25,7 +25,7 @@ npx -w @access4all/cli playwright install chromium
 npm run build
 npm test
 npx access4all check https://exemple.fr
-npx access4all check https://exemple.fr --format html -o rapport.html   # rapport détaillé avec captures
+npx access4all check https://exemple.fr --format html   # rapport détaillé, rangé dans ~/access4all-rapports/ et ouvert dans le navigateur
 npm run dev -w @access4all/web   # app web sur http://localhost:5173
 ```
 

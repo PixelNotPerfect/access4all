@@ -4,6 +4,7 @@ import { analyze, exceedsThreshold, manualChecklist, type AxeResults } from "../
 import { renderCheck, renderChecklist } from "../src/render.js";
 import { scanUrls } from "../src/scan.js";
 import { renderHtmlReport } from "../src/render-html.js";
+import { defaultReportPath, REPORTS_DIR } from "../src/index.js";
 import { closestCompliantColor, contrastRatio, ruleFixes, setAttr } from "../src/fixes.js";
 
 const fixture = (name: string) => pathToFileURL(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))).href;
@@ -147,4 +148,12 @@ describe("rapport HTML avec captures (Chromium)", () => {
     const html = renderHtmlReport({ analyses: [analyze(bad)], manual: [] });
     expect(html).toContain("data:image/jpeg;base64,");
   }, 60_000);
+});
+
+describe("emplacement du rapport HTML", () => {
+  it("range le rapport hors du code, par domaine et par date", () => {
+    const d = new Date(2026, 10, 7, 9, 5);
+    expect(defaultReportPath("https://www.client1.fr/contact", d)).toBe(`${REPORTS_DIR}/client1.fr/2026-11-07_09h05.html`);
+    expect(defaultReportPath("file:///tmp/page.html", d)).toBe(`${REPORTS_DIR}/fichiers-locaux/2026-11-07_09h05.html`);
+  });
 });
