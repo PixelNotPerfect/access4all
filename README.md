@@ -15,7 +15,7 @@ Elle s'adresse à quatre profils :
 
 - [`@access4all/core`](packages/core) : le socle commun. Référentiel RGAA 4.1.2 + compléments WCAG 2.2, conseils par métier, correspondance axe-core, calcul du taux de conformité et calendrier d'actions (export .ics et CSV).
 - [`@access4all/web`](packages/web) : l'app web statique (revue de maquettes, grille de recette et d'audit, rapport, calendrier .ics/CSV), publiée sur GitHub Pages.
-- [`@access4all/cli`](packages/cli) : la commande `access4all` : scan axe-core et rapport pas à pas pour les devs, et checklists par métier.
+- [`@access4all/cli`](packages/cli) : la commande `access4all` : scan axe-core et rapport pas à pas pour les devs (texte, Markdown, JSON ou page HTML avec une capture de chaque élément à corriger), et checklists par métier.
 
 ## Démarrer
 
@@ -25,6 +25,7 @@ npx -w @access4all/cli playwright install chromium
 npm run build
 npm test
 npx access4all check https://exemple.fr
+npx access4all check https://exemple.fr --format html -o rapport.html   # rapport détaillé avec captures
 npm run dev -w @access4all/web   # app web sur http://localhost:5173
 ```
 

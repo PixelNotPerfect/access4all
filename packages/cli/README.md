@@ -27,10 +27,27 @@ Pour chaque page, l'outil :
 3. donne pour chaque étape les éléments en cause (sélecteur CSS), **ce qu'il faut faire** et le lien vers le critère officiel ;
 4. liste les points qu'axe n'a pas pu trancher, puis les **vérifications manuelles** restantes (un outil automatique ne détecte qu'une partie des problèmes).
 
+### Rapport HTML détaillé, élément par élément
+
+```bash
+npx access4all check http://localhost:3000 http://localhost:3000/contact --format html -o rapport-a11y.html
+```
+
+Le script produit une page HTML autonome (images incluses, un seul fichier à partager ou joindre à un ticket). Pour **chaque élément à corriger**, elle montre :
+
+- une **capture d'écran** de l'élément, encadré en rose dans son contexte ;
+- son **état actuel** : sélecteur CSS et code HTML (et, pour un contraste, les couleurs mesurées et le ratio) ;
+- le **problème**, en langage clair, avec le détail technique d'axe-core ;
+- **ce qu'il faut faire**, avec une **proposition de code corrigé** (ou de couleur conforme la plus proche pour un contraste) ;
+- **pourquoi** : qui est gêné et comment, avec les références RGAA et WCAG.
+
+Le rapport est lui-même accessible (structure de titres, sommaire, tableau de synthèse, gravité indiquée en texte et pas seulement en couleur, mode sombre, lisible sur mobile et à l'impression). Sans `-o`, il est écrit dans `rapport-accessibilite.html`. `--no-screenshots` donne un rapport plus léger, sans captures.
+
 Options utiles :
 
 | Option | Effet |
 |---|---|
+| `--format html -o rapport.html` | Rapport détaillé avec capture de chaque élément (voir ci-dessus) |
 | `--format markdown -o rapport.md` | Rapport à joindre au ticket ou à la PR |
 | `--format json` | Pour l'intégration dans d'autres outils |
 | `--fail-on majeur` | Code de sortie 1 dès qu'un critère majeur ou bloquant échoue (défaut : `bloquant`) |
@@ -46,10 +63,10 @@ Fonctionne aussi sur un fichier HTML local : `npx access4all check build/index.h
 ```yaml
 - run: npx playwright install --with-deps chromium
 - run: npm start & npx wait-on http://localhost:3000
-- run: npx access4all check http://localhost:3000 --format markdown -o a11y.md --fail-on bloquant
+- run: npx access4all check http://localhost:3000 --format html -o a11y.html --fail-on bloquant
 - uses: actions/upload-artifact@v4
   if: always()
-  with: { name: rapport-accessibilite, path: a11y.md }
+  with: { name: rapport-accessibilite, path: a11y.html }
 ```
 
 ## Pour les designers et les BA : `checklist`

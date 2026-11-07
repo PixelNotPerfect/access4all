@@ -5,6 +5,12 @@ export interface AxeNode {
   target: unknown[];
   html: string;
   failureSummary?: string;
+  /** Données de contrôle axe (ex. fgColor, bgColor, contrastRatio). */
+  data?: Record<string, unknown>;
+  /** Capture de l'élément encadré (data URI), si demandée. */
+  screenshot?: string;
+  /** visible : capturé ; hidden : sans rendu à l'écran ; page : concerne la page entière. */
+  visibility?: "visible" | "hidden" | "page";
 }
 export interface AxeRuleResult {
   id: string;
@@ -15,6 +21,7 @@ export interface AxeRuleResult {
 }
 export interface AxeResults {
   url: string;
+  title?: string;
   violations: AxeRuleResult[];
   incomplete: AxeRuleResult[];
   passes: AxeRuleResult[];
@@ -27,6 +34,11 @@ export interface Occurrence {
   selector: string;
   html: string;
   summary?: string;
+  /** Code HTML complet de l'élément (jusqu'à 1 000 caractères). */
+  fullHtml: string;
+  data?: Record<string, unknown>;
+  screenshot?: string;
+  visibility?: "visible" | "hidden" | "page";
 }
 
 export interface CriterionFinding {
@@ -39,6 +51,7 @@ export interface CriterionFinding {
 
 export interface PageAnalysis {
   url: string;
+  title?: string;
   /** Critères en échec, du plus grave au plus simple à corriger. */
   failures: CriterionFinding[];
   /** Critères avec des éléments à vérifier manuellement (sans violation avérée). */
@@ -59,6 +72,10 @@ function toOccurrences(r: AxeRuleResult): Occurrence[] {
     selector: n.target.map(String).join(" "),
     html: n.html.length > 200 ? `${n.html.slice(0, 197)}…` : n.html,
     summary: n.failureSummary,
+    fullHtml: n.html.length > 1000 ? `${n.html.slice(0, 999)}…` : n.html,
+    ...(n.data ? { data: n.data } : {}),
+    ...(n.screenshot ? { screenshot: n.screenshot } : {}),
+    ...(n.visibility ? { visibility: n.visibility } : {}),
   }));
 }
 
@@ -108,6 +125,7 @@ export function analyze(results: AxeResults, options: { wcag22?: boolean } = {})
 
   return {
     url: results.url,
+    title: results.title,
     failures: failures.sort(sortFindings),
     reviews: reviews.sort(sortFindings),
     unmapped: v.unmapped,
