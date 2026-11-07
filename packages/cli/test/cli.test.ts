@@ -4,7 +4,8 @@ import { analyze, exceedsThreshold, manualChecklist, type AxeResults } from "../
 import { renderCheck, renderChecklist } from "../src/render.js";
 import { scanUrls } from "../src/scan.js";
 import { renderHtmlReport } from "../src/render-html.js";
-import { defaultReportPath, REPORTS_DIR } from "../src/index.js";
+import { defaultReportPath, REPORTS_DIR, TMP_REPORTS_DIR } from "../src/index.js";
+import { tmpdir } from "node:os";
 import { consolidate } from "../src/consolidate.js";
 import { parseSitemap, resolvePages } from "../src/product.js";
 import { groupDevtools, guideFor } from "../src/devtools-guide.js";
@@ -158,10 +159,15 @@ describe("rapport HTML avec captures (Chromium)", () => {
 });
 
 describe("emplacement du rapport HTML", () => {
-  it("range le rapport hors du code, par domaine et par date", () => {
+  it("met le rapport d'un dev dans le dossier temporaire, hors du code, par domaine et par date", () => {
     const d = new Date(2026, 10, 7, 9, 5);
-    expect(defaultReportPath("https://www.client1.fr/contact", d)).toBe(`${REPORTS_DIR}/client1.fr/2026-11-07_09h05.html`);
-    expect(defaultReportPath("file:///tmp/page.html", d)).toBe(`${REPORTS_DIR}/fichiers-locaux/2026-11-07_09h05.html`);
+    expect(TMP_REPORTS_DIR.startsWith(tmpdir())).toBe(true);
+    expect(defaultReportPath("https://www.client1.fr/contact", d)).toBe(`${TMP_REPORTS_DIR}/client1.fr/2026-11-07_09h05.html`);
+    expect(defaultReportPath("file:///tmp/page.html", d)).toBe(`${TMP_REPORTS_DIR}/fichiers-locaux/2026-11-07_09h05.html`);
+  });
+  it("le garde dans ~/access4all-rapports avec --garder", () => {
+    const d = new Date(2026, 10, 7, 9, 5);
+    expect(defaultReportPath("https://www.client1.fr/contact", d, REPORTS_DIR)).toBe(`${REPORTS_DIR}/client1.fr/2026-11-07_09h05.html`);
   });
 });
 

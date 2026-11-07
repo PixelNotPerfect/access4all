@@ -17,8 +17,10 @@ npm run build
 ## Pour les développeurs : `check`
 
 ```bash
-npx access4all check http://localhost:3000 http://localhost:3000/contact
+npx access4all check http://localhost:3000
 ```
+
+C'est tout : la commande affiche sa progression, puis **ouvre le rapport HTML détaillé dans votre navigateur**. Rien à ranger : le fichier est créé dans le dossier temporaire du système, jamais dans votre code. Pour plusieurs pages : `npx access4all check http://localhost:3000 http://localhost:3000/contact`.
 
 Pour chaque page, l'outil :
 
@@ -49,10 +51,10 @@ Chaque critère tranché apparaît dans la section « Vérifié automatiquement 
 ### Rapport HTML détaillé, élément par élément
 
 ```bash
-npx access4all check https://client1.fr https://client1.fr/contact --format html
+npx access4all check https://client1.fr https://client1.fr/contact
 ```
 
-Le script produit une page HTML autonome (images incluses, un seul fichier à partager ou joindre à un ticket) et **l'ouvre dans le navigateur**. Elle est rangée **hors de votre code**, un dossier par site : `~/access4all-rapports/client1.fr/2026-11-07_09h05.html`. Les rapports précédents restent dans ce dossier, ce qui permet de suivre l'évolution d'un site. Pour **chaque élément à corriger**, elle montre :
+Au terminal, c'est le format par défaut. Le script produit une page HTML autonome (images incluses, un seul fichier à partager ou joindre à un ticket) et **l'ouvre dans le navigateur** ; le terminal affiche son adresse (`file://…`) au cas où. Elle va dans le dossier temporaire du système, vidé automatiquement. Pour la **garder**, un dossier par site, ajoutez `--garder` : `~/access4all-rapports/client1.fr/2026-11-07_09h05.html` (pratique pour suivre l'évolution d'un site). Pour **chaque élément à corriger**, elle montre :
 
 - une **capture d'écran** de l'élément, encadré en rose dans son contexte ;
 - son **état actuel** : sélecteur CSS et code HTML (et, pour un contraste, les couleurs mesurées et le ratio) ;
@@ -60,7 +62,7 @@ Le script produit une page HTML autonome (images incluses, un seul fichier à pa
 - **ce qu'il faut faire**, avec une **proposition de code corrigé** (ou de couleur conforme la plus proche pour un contraste) ;
 - **pourquoi** : qui est gêné et comment, avec les références RGAA et WCAG.
 
-Le rapport est lui-même accessible (structure de titres, sommaire, tableau de synthèse, gravité indiquée en texte et pas seulement en couleur, mode sombre, lisible sur mobile et à l'impression). `-o chemin.html` choisit un autre emplacement, `--no-open` évite l'ouverture du navigateur (jamais ouvert en CI), `--no-screenshots` donne un rapport plus léger, sans captures.
+Le rapport est lui-même accessible (structure de titres, sommaire, tableau de synthèse, gravité indiquée en texte et pas seulement en couleur, mode sombre, lisible sur mobile et à l'impression). `-o chemin.html` choisit un autre emplacement (le format suit l'extension), `--no-open` évite l'ouverture du navigateur (jamais ouvert en CI), `--no-screenshots` donne un rapport plus léger, sans captures.
 
 ### Erreurs techniques vues dans les DevTools
 
@@ -94,7 +96,7 @@ puis on complète la liste des écrans :
 Ensuite, à chaque passage :
 
 ```bash
-npx access4all check --produit client1 --format html
+npx access4all check --produit client1
 ```
 
 Le script scanne tous les écrans (un écran en erreur n'arrête pas le scan), écrit **un seul rapport** dans `~/access4all-rapports/client1/<date>_<heure>.html` et l'ouvre dans le navigateur. Le rapport commence par les **problèmes communs à plusieurs écrans** (même élément, même code : en-tête, menu, pied de page, composant partagé), à corriger une seule fois, avec la liste des écrans concernés ; puis le détail propre à chaque écran. Les rapports successifs restent dans le dossier du produit pour suivre son évolution.
@@ -105,7 +107,8 @@ Options utiles :
 
 | Option | Effet |
 |---|---|
-| `--format html` | Rapport détaillé avec capture de chaque élément, ouvert dans le navigateur (voir ci-dessus) |
+| `--format text` | Rapport texte dans le terminal au lieu du navigateur (défaut en CI ou si la sortie est redirigée) |
+| `--garder` | Garder le rapport HTML dans `~/access4all-rapports/<domaine>/` |
 | `--format markdown -o rapport.md` | Rapport à joindre au ticket ou à la PR |
 | `--format json` | Pour l'intégration dans d'autres outils |
 | `--fail-on majeur` | Code de sortie 1 dès qu'un critère majeur ou bloquant échoue (défaut : `bloquant`) |
@@ -117,12 +120,14 @@ Options utiles :
 
 Fonctionne aussi sur un fichier HTML local : `npx access4all check build/index.html`.
 
+Format par défaut : au terminal, le rapport HTML ouvert dans le navigateur ; en CI ou quand la sortie est redirigée (`| grep`, `> fichier`), le texte, pour ne pas casser les scripts existants.
+
 ### En intégration continue (GitHub Actions)
 
 ```yaml
 - run: npx playwright install --with-deps chromium
 - run: npm start & npx wait-on http://localhost:3000
-- run: npx access4all check http://localhost:3000 --format html -o a11y.html --fail-on bloquant
+- run: npx access4all check http://localhost:3000 -o a11y.html --fail-on bloquant
 - uses: actions/upload-artifact@v4
   if: always()
   with: { name: rapport-accessibilite, path: a11y.html }
