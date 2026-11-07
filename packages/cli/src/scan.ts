@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { readFileSync, existsSync } from "node:fs";
 import { mappedAxeRules } from "@access4all/core";
 import type { AxeResults, AxeRuleResult } from "./analyze.js";
+import { crossPageChecks, runChecks, type ChecksResult } from "./checks.js";
 
 const require = createRequire(import.meta.url);
 
@@ -17,6 +18,11 @@ export interface ScanOptions {
   screenshots?: boolean;
   /** Nombre maximal de captures par page. Défaut : 60. */
   maxScreenshots?: number;
+  /**
+   * Tests complémentaires (clavier, zoom, reflow, espacement, DOM et CSS) qui
+   * couvrent des critères hors de portée d'axe-core. Défaut : true.
+   */
+  checks?: boolean;
   /** Appelé avant le scan de chaque page (progression). */
   onPage?: (index: number, url: string) => void;
 }
@@ -41,7 +47,7 @@ async function captureNodes(page: import("playwright").Page, rules: AxeRuleResul
         node.visibility = "page";
         continue;
       }
-      if (count >= max) continue;
+      if (count >= max || node.screenshot) continue;
       // Élément déjà capturé sur une page précédente (en-tête, pied de page…) : une capture suffit.
       const key = `${rule.id}|${node.html}`;
       if (seen.has(key)) continue;
@@ -113,7 +119,10 @@ export async function scanUrls(urls: string[], options: ScanOptions = {}): Promi
     const context = await browser.newContext({
       viewport: options.viewport ?? { width: 1280, height: 800 },
       locale: "fr-FR",
+      // Injection d'axe-core et des styles de test, même si la page a une politique CSP stricte.
+      bypassCSP: true,
     });
+    const checks: Array<ChecksResult | undefined> = [];
     for (const [i, url] of urls.entries()) {
       options.onPage?.(i, url);
       const page = await context.newPage();
@@ -153,11 +162,34 @@ export async function scanUrls(urls: string[], options: ScanOptions = {}): Promi
           { rules, locale },
         );
         if (options.screenshots) await captureNodes(page, res.violations, options.maxScreenshots ?? 60, seen);
-        out.push({ url: page.url(), title: await page.title(), ...res });
+        const title = await page.title();
+        const finalUrl = page.url();
+        let extra: ChecksResult | undefined;
+        if (options.checks !== false) {
+          extra = await runChecks(page, {
+            capture: options.screenshots ? (rules) => captureNodes(page, rules, options.maxScreenshots ?? 60, seen) : undefined,
+          });
+          // Taille des cibles : axe-core la mesure entièrement ; un succès sans réserve vaut conformité.
+          const t = (list: AxeRuleResult[]) => list.some((r) => r.id === "target-size");
+          if (t(res.passes) && !t(res.violations) && !t(res.incomplete)) {
+            extra.verdicts.push({ criterion: "WCAG-2.5.8", status: "C", reason: "Toutes les cibles cliquables mesurées par axe-core font au moins 24 × 24 px ou sont assez espacées." });
+          }
+        }
+        checks[out.length] = extra;
+        out.push({ url: finalUrl, title, ...res });
       } finally {
         await page.close();
       }
     }
+    // Comparaisons entre écrans (titres identiques, menu à la même place), puis fusion.
+    crossPageChecks(out.map((r, i) => ({ url: r.url, facts: checks[i]?.facts, checks: checks[i] })));
+    out.forEach((r, i) => {
+      const c = checks[i];
+      if (!c) return;
+      r.violations.push(...c.violations);
+      r.incomplete.push(...c.incomplete);
+      r.verdicts = c.verdicts;
+    });
   } finally {
     await browser.close();
   }

@@ -6,13 +6,14 @@ import { resolve, join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import type { Impact, Persona } from "@access4all/core";
-import { analyze, exceedsThreshold, manualChecklist } from "./analyze.js";
+import { analyze, exceedsThreshold, manualChecklist, settledCriteria } from "./analyze.js";
 import { renderCheck, renderChecklist, type Format } from "./render.js";
 import { renderHtmlReport } from "./render-html.js";
 import { scanUrls } from "./scan.js";
 import { REPORTS_DIR, initProduct, loadProduct, productDir, resolvePages, stamp } from "./product.js";
 
-export { analyze, manualChecklist, exceedsThreshold } from "./analyze.js";
+export { analyze, manualChecklist, exceedsThreshold, settledCriteria } from "./analyze.js";
+export { runChecks, crossPageChecks } from "./checks.js";
 export { renderCheck, renderChecklist } from "./render.js";
 export { renderHtmlReport } from "./render-html.js";
 export { ruleFixes, closestCompliantColor, contrastRatio } from "./fixes.js";
@@ -49,6 +50,8 @@ Options de « check » :
       --wait <ms>                     Attendre après le chargement (applications JavaScript)
       --viewport <LxH>                Taille de fenêtre, ex. 320x640 pour tester le reflow (défaut : 1280x800)
       --no-screenshots                Rapport HTML sans captures d'écran
+      --rapide                        Sans les tests complémentaires (clavier, zoom, reflow, espacement…) :
+                                      plus rapide, mais davantage de vérifications manuelles
       --produit <id>                  Scanner les écrans du produit <id> (voir « produit »)
       --no-open                       Ne pas ouvrir le rapport HTML dans le navigateur (automatique en CI)
 
@@ -126,6 +129,7 @@ export async function main(argv: string[]): Promise<number> {
       chromium: { type: "string" },
       "no-screenshots": { type: "boolean", default: false },
       "no-open": { type: "boolean", default: false },
+      rapide: { type: "boolean", default: false },
       role: { type: "string" },
       produit: { type: "string" },
       nom: { type: "string" },
@@ -183,13 +187,17 @@ export async function main(argv: string[]): Promise<number> {
       viewport,
       waitMs: values.wait ? Number(values.wait) : undefined,
       screenshots: format === "html" && !values["no-screenshots"],
+      checks: !values.rapide,
     });
     const analyses = results.map((r) => analyze(r, { wcag22 }));
     const failed = new Set(analyses.flatMap((a) => a.failures.map((f) => f.criterion.id)));
+    const settled = settledCriteria(analyses);
     const manual =
       values.manual === "aucun"
         ? []
-        : manualChecklist("dev", { wcag22, exclude: failed }).filter((c) => values.manual === "tout" || c.impact !== "mineur");
+        : manualChecklist("dev", { wcag22, exclude: [...failed, ...settled.map((s) => s.criterion.id)] }).filter(
+            (c) => values.manual === "tout" || c.impact !== "mineur",
+          );
     if (format === "html") {
       const path = values.output
         ? resolve(values.output)
@@ -197,10 +205,10 @@ export async function main(argv: string[]): Promise<number> {
           ? join(productDir(values.produit), `${stamp()}.html`)
           : defaultReportPath(results[0]?.url ?? targets[0]);
       mkdirSync(resolve(path, ".."), { recursive: true });
-      emit(renderHtmlReport({ analyses, manual }, { productName }), path);
+      emit(renderHtmlReport({ analyses, manual, settled }, { productName }), path);
       if (!values["no-open"] && !process.env.CI) openInBrowser(path);
     } else {
-      emit(renderCheck({ analyses, manual }, format), values.output);
+      emit(renderCheck({ analyses, manual, settled }, format), values.output);
     }
     return exceedsThreshold(analyses, failOn as Impact | "aucun") ? 1 : 0;
   }

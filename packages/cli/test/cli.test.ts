@@ -8,6 +8,9 @@ import { defaultReportPath, REPORTS_DIR } from "../src/index.js";
 import { consolidate } from "../src/consolidate.js";
 import { parseSitemap, resolvePages } from "../src/product.js";
 import { closestCompliantColor, contrastRatio, ruleFixes, setAttr } from "../src/fixes.js";
+import { settledCriteria } from "../src/analyze.js";
+import { CHECK_HELP, crossPageChecks, type ChecksResult } from "../src/checks.js";
+import { criteriaForAxeRule } from "@access4all/core";
 
 const fixture = (name: string) => pathToFileURL(fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))).href;
 
@@ -201,5 +204,49 @@ describe("produits de plusieurs écrans", () => {
     expect(parseSitemap("<sitemapindex><sitemap><loc>https://c.fr/s1.xml</loc></sitemap></sitemapindex>").sitemaps).toEqual(["https://c.fr/s1.xml"]);
     const pages = await resolvePages({ nom: "c", pages: ["https://c.fr/", "https://c.fr/", "https://c.fr/doc.pdf", "https://c.fr/b"], exclure: ["\\.pdf$"], max: 1 });
     expect(pages).toEqual(["https://c.fr/"]);
+  });
+});
+
+describe("tests complémentaires dans le navigateur", () => {
+  it("trouve ce qu'axe-core ne voit pas : focus, reflow, espacement, survol, formulaires", async () => {
+    const [bad, good] = await scanUrls([fixture("interactions.html"), fixture("accessible.html")]);
+    const a = analyze(bad);
+    const failed = a.failures.map((f) => f.criterion.id);
+    for (const id of ["7.3", "8.9", "10.5", "10.7", "10.11", "10.12", "10.14", "11.5", "11.9", "11.13", "12.7", "WCAG-2.4.11"]) expect(failed, id).toContain(id);
+    expect(a.reviews.map((f) => f.criterion.id)).toContain("8.6");
+    // Un critère en échec n'est jamais déclaré conforme.
+    expect(a.verdicts.map((v) => v.criterion)).not.toContain("10.7");
+    const g = analyze(good);
+    expect(g.failures).toEqual([]);
+    const verdicts = Object.fromEntries(g.verdicts.map((v) => [v.criterion, v.status]));
+    expect(verdicts).toMatchObject({ "10.7": "C", "10.11": "C", "10.12": "C", "12.7": "C", "12.9": "C", "4.1": "NA", "5.1": "NA", "1.4": "NA" });
+  }, 90_000);
+
+  it("chaque test est relié à un critère et expliqué", () => {
+    for (const rule of Object.keys(CHECK_HELP)) {
+      expect(criteriaForAxeRule(rule).length, rule).toBeGreaterThan(0);
+      expect(ruleFixes[rule]?.fix, rule).toBeTruthy();
+    }
+  });
+
+  it("retire des vérifications manuelles un critère tranché sur tous les écrans, et seulement lui", () => {
+    const base = { violations: [], incomplete: [], passes: [] };
+    const a = analyze({ ...base, url: "https://c.fr/", verdicts: [{ criterion: "4.1", status: "NA", reason: "Aucune vidéo." }, { criterion: "10.7", status: "C", reason: "Focus visible." }] });
+    const b = analyze({ ...base, url: "https://c.fr/b", verdicts: [{ criterion: "4.1", status: "NA", reason: "Aucune vidéo." }] });
+    const settled = settledCriteria([a, b]);
+    expect(settled.map((s) => s.criterion.id)).toEqual(["4.1"]);
+    const html = renderHtmlReport({ analyses: [a, b], manual: manualChecklist("dev", { exclude: settled.map((s) => s.criterion.id) }), settled });
+    expect(html).toContain('id="auto"');
+    expect(html).toContain("Aucune vidéo.");
+    expect(manualChecklist("dev", { exclude: ["4.1"] }).map((c) => c.id)).not.toContain("4.1");
+  });
+
+  it("compare les écrans : titres identiques et menu déplacé", () => {
+    const mk = (top: number): ChecksResult => ({ violations: [], incomplete: [], verdicts: [], facts: { title: "Accueil – Site", h1: "", nav: { top, left: 0, width: 800, height: 40, order: 1 } } });
+    const pages = [mk(10), mk(12), mk(400)].map((c, i) => ({ url: `https://c.fr/${i}`, facts: c.facts, checks: c }));
+    crossPageChecks(pages);
+    expect(pages[0].checks.verdicts.map((v) => v.criterion)).toContain("12.2");
+    expect(pages[2].checks.violations.map((r) => r.id)).toContain("a4a-navigation-inconstante");
+    expect(pages[1].checks.incomplete.map((r) => r.id)).toContain("a4a-titre-page-duplique");
   });
 });

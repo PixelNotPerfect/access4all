@@ -2,7 +2,7 @@ import rgaaRaw from "./data/rgaa/criteres.json" with { type: "json" };
 import methodologiesRaw from "./data/rgaa/methodologies.json" with { type: "json" };
 import { guidance } from "./data/guidance.js";
 import { wcag22Additions } from "./data/wcag22.js";
-import { axeToRgaa } from "./data/axe-rgaa.js";
+import { axeToRgaa, a4aToRgaa } from "./data/axe-rgaa.js";
 import { stripMarkdown } from "./text.js";
 import type { Criterion, Persona, Role, WcagLevel } from "./types.js";
 
@@ -116,9 +116,9 @@ export function getTopics(): Array<{ number: number; title: string; count: numbe
   return [...map.values()];
 }
 
-/** Critères RGAA (ou WCAG 2.2) couverts par une règle axe-core. */
+/** Critères RGAA (ou WCAG 2.2) couverts par une règle axe-core ou un test complémentaire access4all (« a4a-… »). */
 export function criteriaForAxeRule(ruleId: string): Criterion[] {
-  return (axeToRgaa[ruleId] ?? []).map((id) => INDEX.get(id)!).filter(Boolean);
+  return (axeToRgaa[ruleId] ?? a4aToRgaa[ruleId] ?? []).map((id) => INDEX.get(id)!).filter(Boolean);
 }
 
 /** Règles axe-core connues pour un critère. */
