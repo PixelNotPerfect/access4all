@@ -22,6 +22,8 @@ export interface AxeRuleResult {
 export interface AxeResults {
   url: string;
   title?: string;
+  /** Erreur de chargement : la page n'a pas pu être scannée. */
+  error?: string;
   violations: AxeRuleResult[];
   incomplete: AxeRuleResult[];
   passes: AxeRuleResult[];
@@ -52,6 +54,7 @@ export interface CriterionFinding {
 export interface PageAnalysis {
   url: string;
   title?: string;
+  error?: string;
   /** Critères en échec, du plus grave au plus simple à corriger. */
   failures: CriterionFinding[];
   /** Critères avec des éléments à vérifier manuellement (sans violation avérée). */
@@ -126,6 +129,7 @@ export function analyze(results: AxeResults, options: { wcag22?: boolean } = {})
   return {
     url: results.url,
     title: results.title,
+    ...(results.error ? { error: results.error } : {}),
     failures: failures.sort(sortFindings),
     reviews: reviews.sort(sortFindings),
     unmapped: v.unmapped,

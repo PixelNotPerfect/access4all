@@ -3,7 +3,6 @@ import { parseArgs } from "node:util";
 import { realpathSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { resolve, join } from "node:path";
-import { homedir } from "node:os";
 import { mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import type { Impact, Persona } from "@access4all/core";
@@ -11,18 +10,27 @@ import { analyze, exceedsThreshold, manualChecklist } from "./analyze.js";
 import { renderCheck, renderChecklist, type Format } from "./render.js";
 import { renderHtmlReport } from "./render-html.js";
 import { scanUrls } from "./scan.js";
+import { REPORTS_DIR, initProduct, loadProduct, productDir, resolvePages, stamp } from "./product.js";
 
 export { analyze, manualChecklist, exceedsThreshold } from "./analyze.js";
 export { renderCheck, renderChecklist } from "./render.js";
 export { renderHtmlReport } from "./render-html.js";
 export { ruleFixes, closestCompliantColor, contrastRatio } from "./fixes.js";
 export { scanUrls } from "./scan.js";
+export { REPORTS_DIR, loadProduct, resolvePages, parseSitemap, initProduct } from "./product.js";
 
 const HELP = `access4all — accessibilité RGAA 4.1.2 + WCAG 2.2
 
 Usage :
   access4all check <url|fichier.html>... [options]
       Scanne les pages avec axe-core et donne, étape par étape, ce qu'il faut corriger avant la recette.
+
+  access4all check --produit <id> [options]
+      Scanne tous les écrans d'un produit (liste et/ou sitemap de son produit.json) et produit
+      un seul rapport : d'abord les problèmes communs à plusieurs écrans, puis le détail par écran.
+
+  access4all produit <id> <url>... [--nom "Nom affiché"]
+      Crée ~/access4all-rapports/<id>/produit.json (à compléter avec la liste des écrans).
 
   access4all checklist --role <dev|design|ba> [options]
       Affiche la checklist du métier (design : revue de maquettes ; ba : grille de recette).
@@ -41,10 +49,11 @@ Options de « check » :
       --wait <ms>                     Attendre après le chargement (applications JavaScript)
       --viewport <LxH>                Taille de fenêtre, ex. 320x640 pour tester le reflow (défaut : 1280x800)
       --no-screenshots                Rapport HTML sans captures d'écran
+      --produit <id>                  Scanner les écrans du produit <id> (voir « produit »)
       --no-open                       Ne pas ouvrir le rapport HTML dans le navigateur (automatique en CI)
 
-Rapport HTML : sans -o, il est rangé dans ~/access4all-rapports/<domaine>/<date>_<heure>.html
-(hors de votre code) puis ouvert dans le navigateur.
+Rapport HTML : sans -o, il est rangé hors de votre code puis ouvert dans le navigateur :
+~/access4all-rapports/<id-produit ou domaine>/<date>_<heure>.html
       --chromium <chemin>             Exécutable Chromium à utiliser (ou variable ACCESS4ALL_CHROMIUM)
 
 Exemples :
@@ -55,9 +64,6 @@ Exemples :
 `;
 
 const FORMATS: Array<Format | "html"> = ["text", "markdown", "json", "html"];
-/** Dossier des rapports HTML, hors de tout dépôt de code. */
-export const REPORTS_DIR = join(homedir(), "access4all-rapports");
-
 /** Chemin par défaut d'un rapport : ~/access4all-rapports/<domaine>/<date>_<heure>.html */
 export function defaultReportPath(firstUrl: string, now = new Date()): string {
   let site = "fichiers-locaux";
@@ -68,9 +74,7 @@ export function defaultReportPath(firstUrl: string, now = new Date()): string {
     // URL invalide : dossier générique.
   }
   site = site.replace(/[^a-z0-9.-]+/gi, "_");
-  const p = (n: number) => String(n).padStart(2, "0");
-  const stamp = `${now.getFullYear()}-${p(now.getMonth() + 1)}-${p(now.getDate())}_${p(now.getHours())}h${p(now.getMinutes())}`;
-  return join(REPORTS_DIR, site, `${stamp}.html`);
+  return join(REPORTS_DIR, site, `${stamp(now)}.html`);
 }
 
 /** Ouvre un fichier avec l'application par défaut (le navigateur pour un .html). */
@@ -123,6 +127,8 @@ export async function main(argv: string[]): Promise<number> {
       "no-screenshots": { type: "boolean", default: false },
       "no-open": { type: "boolean", default: false },
       role: { type: "string" },
+      produit: { type: "string" },
+      nom: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -143,8 +149,24 @@ export async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
+  if (command === "produit") {
+    const [id, ...urls] = rest;
+    if (!id || urls.length === 0) fail("indiquez l'identifiant du produit et au moins une URL, ex. access4all produit client1 https://client1.fr");
+    const file = initProduct(id, urls.map(toUrl), values.nom);
+    process.stderr.write(`Produit créé : ${file}\nAjoutez-y la liste des écrans (« pages ») ou vérifiez le « sitemap », puis lancez :\n  access4all check --produit ${id} --format html\n`);
+    return 0;
+  }
+
   if (command === "check") {
-    if (rest.length === 0) fail("indiquez au moins une URL ou un fichier HTML");
+    let productName: string | undefined;
+    let targets = rest.map(toUrl);
+    if (values.produit) {
+      const product = loadProduct(values.produit);
+      productName = product.nom;
+      targets = [...new Set([...(await resolvePages(product, (m) => process.stderr.write(`${m}\n`))), ...targets])];
+      process.stderr.write(`${product.nom} : ${targets.length} écran(s) à scanner.\n`);
+    }
+    if (targets.length === 0) fail("indiquez au moins une URL, un fichier HTML ou --produit");
     const failOn = values["fail-on"] as (typeof THRESHOLDS)[number];
     if (!THRESHOLDS.includes(failOn)) fail(`--fail-on inconnu « ${failOn} »`);
     if (!["essentiel", "tout", "aucun"].includes(values.manual!)) fail(`--manual inconnu « ${values.manual} »`);
@@ -155,7 +177,8 @@ export async function main(argv: string[]): Promise<number> {
       viewport = { width: Number(m[1]), height: Number(m[2]) };
     }
 
-    const results = await scanUrls(rest.map(toUrl), {
+    const results = await scanUrls(targets, {
+      onPage: targets.length > 1 ? (i, url) => process.stderr.write(`[${i + 1}/${targets.length}] ${url}\n`) : undefined,
       executablePath: values.chromium,
       viewport,
       waitMs: values.wait ? Number(values.wait) : undefined,
@@ -168,9 +191,13 @@ export async function main(argv: string[]): Promise<number> {
         ? []
         : manualChecklist("dev", { wcag22, exclude: failed }).filter((c) => values.manual === "tout" || c.impact !== "mineur");
     if (format === "html") {
-      const path = values.output ? resolve(values.output) : defaultReportPath(results[0]?.url ?? rest[0]);
+      const path = values.output
+        ? resolve(values.output)
+        : values.produit
+          ? join(productDir(values.produit), `${stamp()}.html`)
+          : defaultReportPath(results[0]?.url ?? targets[0]);
       mkdirSync(resolve(path, ".."), { recursive: true });
-      emit(renderHtmlReport({ analyses, manual }), path);
+      emit(renderHtmlReport({ analyses, manual }, { productName }), path);
       if (!values["no-open"] && !process.env.CI) openInBrowser(path);
     } else {
       emit(renderCheck({ analyses, manual }, format), values.output);
